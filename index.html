@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zeiterfassung & Pausen-Tracker</title>
+    <style>
+        :root {
+            --card-bg: rgba(30, 41, 59, 0.55);
+            --border: rgba(255, 255, 255, 0.12);
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0.7)), url('background.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .logo-container img {
+            max-height: 45px;
+            width: auto;
+        }
+
+        .nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .nav a {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            text-decoration: none;
+            color: var(--text-muted);
+            border-radius: 8px;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+
+        .nav a.active, .nav a:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        h2, h3 { margin-top: 0; }
+
+        label {
+            display: block;
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 6px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text);
+            box-sizing: border-box;
+            font-size: 15px;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 18px;
+            transition: 0.2s;
+        }
+
+        button:hover { background: var(--primary-hover); }
+
+        .btn-live {
+            background: var(--warning);
+            color: black;
+            font-size: 16px;
+        }
+
+        .btn-live.active {
+            background: var(--danger);
+            color: white;
+        }
+
+        .timer-display {
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            margin: 15px 0;
+            font-family: monospace;
+            color: var(--warning);
+        }
+
+        .history-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 10px;
+        }
+
+        .history-list li {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.05);
+            margin-bottom: 6px;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="logo-container">
+        <img src="logo.png" alt="BreakzZz Logo">
+    </div>
+
+    <div class="nav">
+        <a href="index.html" class="active">Erfassung</a>
+        <a href="mitarbeiter.html">Mitarbeiter</a>
+        <a href="uebersicht.html">📊 Übersicht</a>
+    </div>
+
+    <!-- Live Pausen-Tracker -->
+    <div class="card">
+        <h3>🔴 Live Pausen-Stoppuhr</h3>
+        <label for="trackerEmpSelect">Mitarbeiter auswählen:</label>
+        <select id="trackerEmpSelect" onchange="checkActivePauseStatus()">
+            <option value="">-- Bitte wählen --</option>
+        </select>
+
+        <div id="timerContainer" style="display: none;">
+            <div class="timer-display" id="timerDisplay">00:00:00</div>
+        </div>
+
+        <button id="btnTracker" class="btn-live" onclick="togglePauseTracker()">⏸️ Pause Starten</button>
+    </div>
+
+    <!-- Manuelle Erfassung -->
+    <div class="card">
+        <h3>📝 Zeit & Pause manuell eintragen</h3>
+        
+        <form id="timeForm">
+            <label for="employeeSelect">Mitarbeiter:</label>
+            <select id="employeeSelect" required></select>
+
+            <label for="date">Datum:</label>
+            <input type="date" id="date" required>
+
+            <label for="start">Arbeitsbeginn (optional):</label>
+            <input type="time" id="start">
+
+            <label for="pauseStart">Pause Beginn (manuell):</label>
+            <input type="time" id="pauseStart">
+
+            <label for="pauseEnd">Pause Ende (manuell):</label>
+            <input type="time" id="pauseEnd">
+
+            <label for="end">Arbeitsende (optional):</label>
+            <input type="time" id="end">
+
+            <button type="submit">Speichern</button>
+        </form>
+
+        <div id="historyBox" style="margin-top: 20px; display: none;">
+            <h4>📋 Pausen an diesem Tag:</h4>
+            <ul id="pauseHistoryList" class="history-list"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+    const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
+
+    const empSelect = document.getElementById('employeeSelect');
+    const trackerEmpSelect = document.getElementById('trackerEmpSelect');
+    const dateInput = document.getElementById('date');
+    dateInput.valueAsDate = new Date();
+
+    let timerInterval = null;
+    let currentActivePause = null;
+
+    async function loadEmployees() {
+        try {
+            const res = await fetch(FIREBASE_URL + 'employees.json');
+            const data = await res.json();
+            
+            empSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            trackerEmpSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+            
+            if (data) {
+                Object.keys(data).forEach(id => {
+                    let opt1 = new Option(data[id].name, id);
+                    let opt2 = new Option(data[id].name, id);
+                    empSelect.add(opt1);
+                    trackerEmpSelect.add(opt2);
+                });
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const empParam = urlParams.get('emp');
+                if (empParam) {
+                    trackerEmpSelect.value = empParam;
+                    checkActivePauseStatus();
+                }
+            }
+        } catch (e) {
+            console.error('Fehler beim Laden der Mitarbeiter:', e);
+        }
+    }
+
+    function timeToMinutes(t) {
+        if(!t) return 0;
+        let [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+    }
+
+    function checkOverlap(start1, end1, start2, end2) {
+        return Math.max(start1, start2) < Math.min(end1, end2);
+    }
+
+    async function fetchDayData(empId, date) {
+        if (!empId || !date) return null;
+        try {
+            const res = await fetch(FIREBASE_URL + `time_entries/${empId}_${date}.json`);
+            return await res.json();
+        } catch (e) { return null; }
+    }
+
+    async function checkDayStatus() {
+        const empId = empSelect.value;
+        const date = dateInput.value;
+        const data = await fetchDayData(empId, date);
+
+        const historyBox = document.getElementById('historyBox');
+        const list = document.getElementById('pauseHistoryList');
+
+        if (data && data.pauses && data.pauses.length > 0) {
+            historyBox.style.display = 'block';
+            list.innerHTML = '';
+            data.pauses.forEach((p, i) => {
+                let li = document.createElement('li');
+                li.innerHTML = `<span>Pause ${i+1}:</span> <strong>${p.start} - ${p.end} Uhr</strong>`;
+                list.appendChild(li);
+            });
+        } else {
+            historyBox.style.display = 'none';
+        }
+    }
+
+    empSelect.addEventListener('change', checkDayStatus);
+    dateInput.addEventListener('change', checkDayStatus);
+
+    async function checkActivePauseStatus() {
+        const empId = trackerEmpSelect.value;
+        const btn = document.getElementById('btnTracker');
+        const timerContainer = document.getElementById('timerContainer');
+
+        if (timerInterval) clearInterval(timerInterval);
+
+        if (!empId) {
+            btn.textContent = '⏸️ Pause Starten';
+            btn.classList.remove('active');
+            timerContainer.style.display = 'none';
+            currentActivePause = null;
+            return;
+        }
+
+        try {
+            const res = await fetch(FIREBASE_URL + `active_pauses/${empId}.json`);
+            const activeData = await res.json();
+
+            if (activeData && activeData.startTime) {
+                currentActivePause = activeData;
+                btn.textContent = '▶️ Pause Beenden';
+                btn.classList.add('active');
+                timerContainer.style.display = 'block';
+
+                const startTimestamp = new Date(activeData.startTime).getTime();
+
+                timerInterval = setInterval(() => {
+                    const now = new Date().getTime();
+                    const diffMs = now - startTimestamp;
+
+                    const hours = String(Math.floor(diffMs / 3600000)).padStart(2, '0');
+                    const minutes = String(Math.floor((diffMs % 3600000) / 60000)).padStart(2, '0');
+                    const seconds = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
+
+                    document.getElementById('timerDisplay').textContent = `${hours}:${minutes}:${seconds}`;
+                }, 1000);
+            } else {
+                currentActivePause = null;
+                btn.textContent = '⏸️ Pause Starten';
+                btn.classList.remove('active');
+                timerContainer.style.display = 'none';
+            }
+        } catch (e) {
+            console.error('Fehler beim Prüfen der aktiven Pause:', e);
+        }
+    }
+
+    async function togglePauseTracker() {
+        const empId = trackerEmpSelect.value;
+        if (!empId) {
+            alert('Bitte wähle zuerst einen Mitarbeiter aus!');
+            return;
+        }
+
+        const now = new Date();
+
+        if (!currentActivePause) {
+            const activePayload = {
+                startTime: now.toISOString(),
+                startStr: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
+            };
+
+            await fetch(FIREBASE_URL + `active_pauses/${empId}.json`, {
+                method: 'PUT',
+                body: JSON.stringify(activePayload)
+            });
+
+            checkActivePauseStatus();
+        } else {
+            const startStr = currentActivePause.startStr;
+            const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            const dateStr = now.toISOString().split('T')[0];
+
+            const existingData = await fetchDayData(empId, dateStr);
+            if (existingData && existingData.pauses) {
+                let newStartMin = timeToMinutes(startStr);
+                let newEndMin = timeToMinutes(endStr);
+                for (let p of existingData.pauses) {
+                    if (checkOverlap(newStartMin, newEndMin, timeToMinutes(p.start), timeToMinutes(p.end))) {
+                        alert(`Fehler: Diese Pause überschneidet sich mit einer bereits eingetragenen Pause (${p.start} - ${p.end} Uhr)!`);
+                        return;
+                    }
+                }
+            }
+
+            await savePauseToDatabase(empId, dateStr, startStr, endStr);
+
+            await fetch(FIREBASE_URL + `active_pauses/${empId}.json`, {
+                method: 'DELETE'
+            });
+
+            checkActivePauseStatus();
+        }
+    }
+
+    async function savePauseToDatabase(empId, date, startStr, endStr) {
+        const entryKey = `${empId}_${date}`;
+        const existingData = await fetchDayData(empId, date) || { pauses: [] };
+        let pauses = existingData.pauses || [];
+        
+        pauses.push({ start: startStr, end: endStr });
+
+        const payload = {
+            id: entryKey,
+            employee_id: empId,
+            date: date,
+            start_time: existingData.start_time || '',
+            end_time: existingData.end_time || '',
+            pauses: pauses
+        };
+
+        await fetch(FIREBASE_URL + `time_entries/${entryKey}.json`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        alert(`Pause erfolgreich von ${startStr} bis ${endStr} gespeichert!`);
+        if (empSelect.value === empId) checkDayStatus();
+    }
+
+    document.getElementById('timeForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const empId = empSelect.value;
+        const date = dateInput.value;
+        const entryKey = `${empId}_${date}`;
+
+        const newStart = document.getElementById('start').value;
+        const newEnd = document.getElementById('end').value;
+        const newPauseStart = document.getElementById('pauseStart').value;
+        const newPauseEnd = document.getElementById('pauseEnd').value;
+
+        // 1. Arbeitszeiten-Grundlogik (Ende nach Beginn)
+        if (newStart && newEnd) {
+            if (timeToMinutes(newEnd) <= timeToMinutes(newStart)) {
+                alert('Fehler: Das Arbeitsende muss nach dem Arbeitsbeginn liegen!');
+                return;
+            }
+        }
+
+        const existingData = await fetchDayData(empId, date) || { pauses: [] };
+        let pauses = [...(existingData.pauses || [])];
+
+        // Wenn eine manuelle Pause eingetragen werden soll
+        if (newPauseStart && newPauseEnd) {
+            let pStartMin = timeToMinutes(newPauseStart);
+            let pEndMin = timeToMinutes(newPauseEnd);
+
+            if (pEndMin <= pStartMin) {
+                alert('Fehler: Das Pausen-Ende muss nach dem Pausen-Beginn liegen!');
+                return;
+            }
+
+            // Prüfung gegen Arbeitsbeginn / Arbeitsende
+            if (newStart && pStartMin < timeToMinutes(newStart)) {
+                alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
+                return;
+            }
+            if (newEnd && pEndMin > timeToMinutes(newEnd)) {
+                alert(`Fehler: Eine Pause (${newPauseEnd} Uhr) kann nicht nach dem Arbeitsende (${newEnd} Uhr) enden!`);
+                return;
+            }
+
+            // Überschneidungsprüfung mit bestehenden Pausen
+            for (let p of pauses) {
+                if (checkOverlap(pStartMin, pEndMin, timeToMinutes(p.start), timeToMinutes(p.end))) {
+                    alert(`Fehler: Die neue Pause überschneidet sich mit einer bereits vorhandenen Pause (${p.start} - ${p.end} Uhr)!`);
+                    return;
+                }
+            }
+
+            pauses.push({ start: newPauseStart, end: newPauseEnd });
+        }
+
+        // Wenn Arbeitsbeginn / Arbeitsende neu gesetzt werden, prüfen ob sie zu den *bereits vorhandenen* Pausen passen
+        let finalStart = newStart || existingData.start_time || '';
+        let finalEnd = newEnd || existingData.end_time || '';
+
+        if (pauses.length > 0) {
+            pauses.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+            let firstPauseStart = timeToMinutes(pauses[0].start);
+            let lastPauseEnd = timeToMinutes(pauses[pauses.length - 1].end);
+
+            if (finalStart && timeToMinutes(finalStart) > firstPauseStart) {
+                alert(`Fehler: Der Arbeitsbeginn (${finalStart} Uhr) kann nicht nach der ersten Pause (${pauses[0].start} Uhr) liegen!`);
+                return;
+            }
+            if (finalEnd && timeToMinutes(finalEnd) < lastPauseEnd) {
+                alert(`Fehler: Das Arbeitsende (${finalEnd} Uhr) kann nicht vor dem Ende der letzten Pause (${pauses[pauses.length - 1].end} Uhr) liegen!`);
+                return;
+            }
+        }
+
+        const payload = {
+            id: entryKey,
+            employee_id: empId,
+            date: date,
+            start_time: finalStart,
+            end_time: finalEnd,
+            pauses: pauses
+        };
+
+        await fetch(FIREBASE_URL + `time_entries/${entryKey}.json`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+        });
+
+        alert('Erfolgreich gespeichert!');
+        document.getElementById('start').value = '';
+        document.getElementById('pauseStart').value = '';
+        document.getElementById('pauseEnd').value = '';
+        document.getElementById('end').value = '';
+        checkDayStatus();
+    });
+
+    loadEmployees();
+</script>
+</body>
+</html>

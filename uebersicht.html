@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Übersicht, Export & PDF</title>
+    <style>
+        :root {
+            --card-bg: rgba(30, 41, 59, 0.55);
+            --border: rgba(255, 255, 255, 0.12);
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --purple: #8b5cf6;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0.7)), url('background.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: var(--text);
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1200px; margin: auto; }
+
+        .logo-container {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .logo-container img {
+            max-height: 45px;
+            width: auto;
+        }
+
+        .nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            max-width: 500px;
+        }
+
+        .nav a {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            text-decoration: none;
+            color: var(--text-muted);
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            overflow-x: auto;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-width: 160px;
+        }
+
+        .filter-group label {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .filter-group select, .filter-group input {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text);
+            font-size: 14px;
+        }
+
+        .date-input-wrapper {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-today {
+            background: var(--primary);
+            color: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            white-space: nowrap;
+            transition: 0.2s;
+        }
+
+        .btn-today:hover { background: #2563eb; }
+
+        .btn-reset {
+            background: rgba(51, 65, 85, 0.8);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .export-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn-export {
+            background: var(--success);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .btn-export:hover { background: #059669; }
+
+        .btn-pdf {
+            background: var(--purple);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .btn-pdf:hover { background: #7c3aed; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th { color: var(--text-muted); font-size: 14px; }
+
+        .pause-badge {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: inline-block;
+        }
+
+        .pause-badge-live {
+            background: rgba(239, 68, 68, 0.25);
+            color: #f87171;
+            border: 1px solid var(--danger);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: inline-block;
+            font-weight: bold;
+            text-decoration: none;
+            animation: pulse 1.5s infinite;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .pause-badge-live:hover {
+            background: rgba(239, 68, 68, 0.4);
+            transform: scale(1.02);
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .pause-detail {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+            margin-top: 4px;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .btn-edit { background: var(--warning); color: black; }
+        .btn-del { background: var(--danger); color: white; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            padding: 24px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 450px;
+            border: 1px solid var(--border);
+            color: white;
+        }
+
+        .modal-content input {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: #0f172a;
+            color: white;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .pause-edit-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        @media print {
+            body { background: white; color: black; padding: 0; }
+            .nav, .filter-bar, .export-bar, .btn, button, .logo-container { display: none !important; }
+            .card { background: white; border: none; box-shadow: none; padding: 0; }
+            table { width: 100%; border: 1px solid #ccc; }
+            th, td { border: 1px solid #ccc; color: black; padding: 8px; }
+            th { background: #f1f5f9; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="logo-container">
+        <img src="logo.png" alt="BreakzZz Logo">
+    </div>
+
+    <div class="nav">
+        <a href="index.html">Erfassung</a>
+        <a href="mitarbeiter.html">Mitarbeiter</a>
+        <a href="uebersicht.html" class="active">📊 Übersicht</a>
+    </div>
+
+    <div class="card">
+        <h2>📊 Arbeitszeiten & Pausen Übersicht</h2>
+        
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label for="filterEmp">Mitarbeiter filtern:</label>
+                <select id="filterEmp" onchange="renderTable()">
+                    <option value="ALL">-- Alle Mitarbeiter --</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="filterDate">Nach Tag filtern:</label>
+                <div class="date-input-wrapper">
+                    <input type="date" id="filterDate" onchange="document.getElementById('filterMonth').value=''; renderTable()">
+                    <button class="btn-today" onclick="setFilterToToday()">📅 Heute</button>
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <label for="filterMonth">Oder nach Monat:</label>
+                <input type="month" id="filterMonth" onchange="document.getElementById('filterDate').value=''; renderTable()">
+            </div>
+
+            <button class="btn-reset" onclick="resetFilters()">Filter zurücksetzen</button>
+        </div>
+
+        <div class="export-bar">
+            <button class="btn-export" onclick="exportDataCSV()">📥 Export (CSV / Excel)</button>
+            <button class="btn-pdf" onclick="exportDataPDF()">🖨️ PDF / Drucken</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Mitarbeiter</th>
+                    <th>Datum</th>
+                    <th>Beginn</th>
+                    <th>Pausen (Gesamt & Details)</th>
+                    <th>Ende</th>
+                    <th>Netto-Arbeitszeit</th>
+                    <th class="no-print">Aktionen</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <tr><td colspan="7">Lade Daten...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ Eintrag bearbeiten</h3>
+        <input type="hidden" id="editEntryId">
+        <input type="hidden" id="editEmpId">
+        <input type="hidden" id="editDate">
+        
+        <label>Arbeitsbeginn:</label>
+        <input type="time" id="editStart">
+
+        <label>Arbeitsende:</label>
+        <input type="time" id="editEnd">
+
+        <h4 style="margin-top: 15px; margin-bottom: 5px;">Pausen verwalten:</h4>
+        <div id="modalPauseList"></div>
+        <button type="button" onclick="addModalPauseRow()" style="background: #334155; color: white; margin-top: 5px; width: 100%; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">+ Weitere Pause hinzufügen</button>
+
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button onclick="saveModalChanges()" style="background: var(--success); color: white; flex: 1; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold;">Speichern</button>
+            <button onclick="closeModal()" style="background: var(--danger); color: white; flex: 1; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold;">Abbrechen</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
+    let employees = {};
+    let currentEntries = [];
+    let activePauses = {};
+
+    function timeToMinutes(t) {
+        if (!t || !t.includes(':')) return 0;
+        let [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+    }
+
+    function formatMinutes(min) {
+        if (min <= 0) return '0 Min.';
+        let h = Math.floor(min / 60);
+        let m = min % 60;
+        return h > 0 ? `${h} Std. ${m} Min.` : `${m} Min.`;
+    }
+
+    function checkOverlap(start1, end1, start2, end2) {
+        return Math.max(start1, start2) < Math.min(end1, end2);
+    }
+
+    async function loadData() {
+        const [empRes, timeRes, activeRes] = await Promise.all([
+            fetch(FIREBASE_URL + 'employees.json'),
+            fetch(FIREBASE_URL + 'time_entries.json'),
+            fetch(FIREBASE_URL + 'active_pauses.json')
+        ]);
+
+        employees = await empRes.json() || {};
+        const timeData = await timeRes.json() || {};
+        activePauses = await activeRes.json() || {};
+
+        currentEntries = Object.keys(timeData).map(key => {
+            return {
+                id: key,
+                ...timeData[key]
+            };
+        });
+
+        const filterEmpSelect = document.getElementById('filterEmp');
+        filterEmpSelect.innerHTML = '<option value="ALL">-- Alle Mitarbeiter --</option>';
+        Object.keys(employees).forEach(id => {
+            let opt = new Option(employees[id].name, id);
+            filterEmpSelect.add(opt);
+        });
+
+        renderTable();
+    }
+
+    function setFilterToToday() {
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('filterDate').value = todayStr;
+        document.getElementById('filterMonth').value = '';
+        renderTable();
+    }
+
+    function getFilteredEntries() {
+        const selectedEmpId = document.getElementById('filterEmp').value;
+        const selectedDate = document.getElementById('filterDate').value;
+        const selectedMonth = document.getElementById('filterMonth').value;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        let displayList = [...currentEntries];
+
+        Object.keys(activePauses).forEach(empId => {
+            const activeData = activePauses[empId];
+            if (!activeData) return;
+
+            const existingEntryIndex = displayList.findIndex(e => e.employee_id === empId && e.date === todayStr);
+
+            if (existingEntryIndex === -1) {
+                displayList.push({
+                    id: `${empId}_${todayStr}`,
+                    employee_id: empId,
+                    date: todayStr,
+                    start_time: '',
+                    end_time: '',
+                    pauses: []
+                });
+            }
+        });
+
+        return displayList.filter(entry => {
+            if (!entry.employee_id) return false;
+
+            if (selectedEmpId !== 'ALL' && entry.employee_id !== selectedEmpId) {
+                return false;
+            }
+            if (selectedDate && entry.date !== selectedDate) {
+                return false;
+            }
+            if (selectedMonth && (!entry.date || !entry.date.startsWith(selectedMonth))) {
+                return false;
+            }
+            return true;
+        }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        const filteredEntries = getFilteredEntries();
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (filteredEntries.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7">Keine passenden Einträge für diese Filter-Kriterien gefunden.</td></tr>';
+            return;
+        }
+
+        filteredEntries.forEach(entry => {
+            const empId = entry.employee_id;
+            const empName = employees[empId]?.name || 'Unbekannt';
+            
+            let pauseSumMin = 0;
+            let pauseDetailsHTML = '';
+
+            if (entry.pauses && Array.isArray(entry.pauses)) {
+                entry.pauses.forEach((p, idx) => {
+                    let dur = timeToMinutes(p.end) - timeToMinutes(p.start);
+                    if (dur > 0) pauseSumMin += dur;
+                    pauseDetailsHTML += `<span class="pause-detail">#${idx+1}: ${p.start} - ${p.end}</span>`;
+                });
+            }
+
+            const activePause = activePauses[empId];
+            let liveStatusHTML = '';
+
+            if (activePause && entry.date === todayStr) {
+                liveStatusHTML = `
+                    <a href="index.html?emp=${empId}" class="pause-badge-live" title="Klicken, um Stoppuhr zu öffnen">
+                        🔴 JETZT IN PAUSE (seit ${activePause.startStr} Uhr) ➔
+                    </a>
+                `;
+            }
+
+            let startMin = timeToMinutes(entry.start_time);
+            let endMin = timeToMinutes(entry.end_time);
+            let grossWork = (startMin && endMin && endMin > startMin) ? (endMin - startMin) : 0;
+            let netWorkMin = Math.max(0, grossWork - pauseSumMin);
+
+            let entryDate = entry.date || todayStr;
+            let dateParts = entryDate.split('-');
+            let formattedDate = dateParts.length === 3 ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}` : entryDate;
+
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${empName}</strong></td>
+                <td><strong>${formattedDate}</strong></td>
+                <td>${entry.start_time || '-'}</td>
+                <td>
+                    ${liveStatusHTML}
+                    <div class="pause-badge" style="margin-top: 4px;">⏱️ Gesamt: ${formatMinutes(pauseSumMin)}</div>
+                    ${pauseDetailsHTML}
+                </td>
+                <td>${entry.end_time || '-'}</td>
+                <td><strong style="color: var(--success);">${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}</strong></td>
+                <td>
+                    <button class="btn btn-edit" onclick="openModal('${entry.id}')">Bearbeiten</button>
+                    <button class="btn btn-del" onclick="deleteEntry('${entry.id}')">Löschen</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function resetFilters() {
+        document.getElementById('filterEmp').value = 'ALL';
+        document.getElementById('filterDate').value = '';
+        document.getElementById('filterMonth').value = '';
+        renderTable();
+    }
+
+    // --- NEUER CSV-EXPORT: PAUSEN UNTEREINANDER IN SPALTE D & E ---
+    function exportDataCSV() {
+        const entries = getFilteredEntries();
+        if (entries.length === 0) {
+            alert('Keine Daten für den Export vorhanden!');
+            return;
+        }
+
+        // Feste Spaltenstruktur: Mitarbeiter, Datum, Arbeitsbeginn, Pause Beginn (Spalte D), Pause Ende (Spalte E), Pausen Gesamt, Arbeitsende, Netto-Arbeitszeit
+        let headerCols = ["Mitarbeiter", "Datum", "Arbeitsbeginn", "Pause Beginn", "Pause Ende", "Pausen Gesamt", "Arbeitsende", "Netto-Arbeitszeit"];
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += headerCols.join(";") + "\n";
+
+        entries.forEach(entry => {
+            const empName = employees[entry.employee_id]?.name || 'Unbekannt';
+            let pauseSumMin = 0;
+            let pauses = entry.pauses || [];
+
+            if (pauses.length > 0) {
+                pauses.forEach(p => {
+                    let dur = timeToMinutes(p.end) - timeToMinutes(p.start);
+                    if (dur > 0) pauseSumMin += dur;
+                });
+            }
+
+            let startMin = timeToMinutes(entry.start_time);
+            let endMin = timeToMinutes(entry.end_time);
+            let grossWork = (startMin && endMin && endMin > startMin) ? (endMin - startMin) : 0;
+            let netWorkMin = Math.max(0, grossWork - pauseSumMin);
+
+            // Wenn es keine Pausen gibt, trotzdem mindestens eine Zeile ausgeben
+            if (pauses.length === 0) {
+                let row = [
+                    `"${empName}"`,
+                    `"${entry.date}"`,
+                    `"${entry.start_time || ''}"`,
+                    `""`, // Pause Beginn leer
+                    `""`, // Pause Ende leer
+                    `"0 Min."`,
+                    `"${entry.end_time || ''}"`,
+                    `"${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}"`
+                ];
+                csvContent += row.join(";") + "\n";
+            } else {
+                // Für jede Pause eine eigene Zeile generieren
+                pauses.forEach((p, index) => {
+                    let isFirst = (index === 0);
+
+                    let row = [
+                        isFirst ? `"${empName}"` : `""`,       // Name nur in der ersten Zeile, danach leer
+                        isFirst ? `"${entry.date}"` : `""`,     // Datum nur in der ersten Zeile, danach leer
+                        isFirst ? `"${entry.start_time || ''}"` : `""`, // Arbeitsbeginn nur in erster Zeile
+                        `"${p.start}"`,                         // Pause Beginn (Spalte D)
+                        `"${p.end}"`,                           // Pause Ende (Spalte E)
+                        isFirst ? `"${formatMinutes(pauseSumMin)}"` : `""`, // Pausen Gesamt nur in erster Zeile
+                        isFirst ? `"${entry.end_time || ''}"` : `""`,       // Arbeitsende nur in erster Zeile
+                        isFirst ? `"${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}"` : `""` // Netto nur in erster Zeile
+                    ];
+                    csvContent += row.join(";") + "\n";
+                });
+            }
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        
+        let filenameSuffix = "alle_daten";
+        const d = document.getElementById('filterDate').value;
+        const m = document.getElementById('filterMonth').value;
+        if (d) filenameSuffix = `tag_${d}`;
+        else if (m) filenameSuffix = `monat_${m}`;
+
+        link.setAttribute("download", `zeiterfassung_${filenameSuffix}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function exportDataPDF() {
+        window.print();
+    }
+
+    function openModal(entryId) {
+        let entry = currentEntries.find(e => e.id === entryId);
+        let empId = '';
+        let date = new Date().toISOString().split('T')[0];
+
+        if (entry) {
+            empId = entry.employee_id;
+            date = entry.date || date;
+        } else {
+            const parts = entryId.split('_');
+            empId = parts[0];
+            date = parts[1] || date;
+            entry = {
+                id: entryId,
+                employee_id: empId,
+                date: date,
+                start_time: '',
+                end_time: '',
+                pauses: []
+            };
+        }
+
+        document.getElementById('editEntryId').value = entryId;
+        document.getElementById('editEmpId').value = empId;
+        document.getElementById('editDate').value = date;
+        document.getElementById('editStart').value = entry.start_time || '';
+        document.getElementById('editEnd').value = entry.end_time || '';
+
+        const container = document.getElementById('modalPauseList');
+        container.innerHTML = '';
+
+        if (entry.pauses && entry.pauses.length > 0) {
+            entry.pauses.forEach(p => addModalPauseRow(p.start, p.end));
+        }
+
+        document.getElementById('editModal').style.display = 'flex';
+    }
+
+    function addModalPauseRow(start = '', end = '') {
+        const container = document.getElementById('modalPauseList');
+        const div = document.createElement('div');
+        div.className = 'pause-edit-row';
+        div.innerHTML = `
+            <input type="time" class="m-pause-start" value="${start}"> bis 
+            <input type="time" class="m-pause-end" value="${end}">
+            <button type="button" onclick="this.parentElement.remove()" style="background:var(--danger); color:white; padding:4px 8px; width:auto; margin:0; border:none; border-radius:4px; cursor:pointer;">X</button>
+        `;
+        container.appendChild(div);
+    }
+
+    function closeModal() {
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    async function saveModalChanges() {
+        const entryId = document.getElementById('editEntryId').value;
+        const empId = document.getElementById('editEmpId').value;
+        const date = document.getElementById('editDate').value;
+        const targetKey = `${empId}_${date}`;
+
+        const newStart = document.getElementById('editStart').value;
+        const newEnd = document.getElementById('editEnd').value;
+
+        if (newStart && newEnd) {
+            if (timeToMinutes(newEnd) <= timeToMinutes(newStart)) {
+                alert('Fehler: Das Arbeitsende muss nach dem Arbeitsbeginn liegen!');
+                return;
+            }
+        }
+
+        const pauseRows = document.querySelectorAll('.pause-edit-row');
+        let newPauses = [];
+        
+        for (let row of pauseRows) {
+            let pStart = row.querySelector('.m-pause-start').value;
+            let pEnd = row.querySelector('.m-pause-end').value;
+
+            if (pStart && pEnd) {
+                let pStartMin = timeToMinutes(pStart);
+                let pEndMin = timeToMinutes(pEnd);
+
+                if (pEndMin <= pStartMin) {
+                    alert(`Fehler bei einer Pause: Das Pausen-Ende (${pEnd}) muss nach dem Pausen-Beginn (${pStart}) liegen!`);
+                    return;
+                }
+
+                if (newStart && pStartMin < timeToMinutes(newStart)) {
+                    alert(`Fehler: Eine Pause (${pStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
+                    return;
+                }
+
+                if (newEnd && pEndMin > timeToMinutes(newEnd)) {
+                    alert(`Fehler: Eine Pause (${pEnd} Uhr) kann nicht nach dem Arbeitsende (${newEnd} Uhr) enden!`);
+                    return;
+                }
+
+                for (let existingP of newPauses) {
+                    if (checkOverlap(pStartMin, pEndMin, timeToMinutes(existingP.start), timeToMinutes(existingP.end))) {
+                        alert(`Fehler: Pausen dürfen sich nicht überschneiden!`);
+                        return;
+                    }
+                }
+
+                newPauses.push({ start: pStart, end: pEnd });
+            }
+        }
+
+        if (newPauses.length > 0) {
+            newPauses.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+            let firstPauseStart = timeToMinutes(newPauses[0].start);
+            let lastPauseEnd = timeToMinutes(newPauses[newPauses.length - 1].end);
+
+            if (newStart && timeToMinutes(newStart) > firstPauseStart) {
+                alert(`Fehler: Der Arbeitsbeginn (${newStart} Uhr) kann nicht nach der ersten Pause (${newPauses[0].start} Uhr) liegen!`);
+                return;
+            }
+            if (newEnd && timeToMinutes(newEnd) < lastPauseEnd) {
+                alert(`Fehler: Das Arbeitsende (${newEnd} Uhr) kann nicht vor dem Ende der letzten Pause (${newPauses[newPauses.length - 1].end} Uhr) liegen!`);
+                return;
+            }
+        }
+
+        const updatedData = {
+            id: targetKey,
+            employee_id: empId,
+            date: date,
+            start_time: newStart,
+            end_time: newEnd,
+            pauses: newPauses
+        };
+
+        if (entryId !== targetKey && !entryId.includes('_')) {
+            await fetch(FIREBASE_URL + `time_entries/${entryId}.json`, { method: 'DELETE' });
+        }
+
+        await fetch(FIREBASE_URL + `time_entries/${targetKey}.json`, {
+            method: 'PUT',
+            body: JSON.stringify(updatedData)
+        });
+
+        closeModal();
+        loadData();
+    }
+
+    async function deleteEntry(id) {
+        if (confirm('Eintrag wirklich löschen?')) {
+            await fetch(FIREBASE_URL + `time_entries/${id}.json`, { method: 'DELETE' });
+            loadData();
+        }
+    }
+
+    loadData();
+    setInterval(loadData, 10000);
+</script>
+</body>
+</html>
