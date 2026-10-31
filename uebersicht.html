@@ -384,6 +384,15 @@
     let currentEntries = [];
     let activePauses = {};
 
+    // Lokales Datum ermitteln (ohne UTC-Zeitverschiebung)
+    function getTodayLocalDate() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
     function timeToMinutes(t) {
         if (!t || !t.includes(':')) return 0;
         let [h, m] = t.split(':').map(Number);
@@ -426,12 +435,16 @@
             filterEmpSelect.add(opt);
         });
 
+        // Setzt beim initialen Laden der Seite automatisch das Tagesdatum als Filter
+        if (!document.getElementById('filterDate').value && !document.getElementById('filterMonth').value) {
+            document.getElementById('filterDate').value = getTodayLocalDate();
+        }
+
         renderTable();
     }
 
     function setFilterToToday() {
-        const todayStr = new Date().toISOString().split('T')[0];
-        document.getElementById('filterDate').value = todayStr;
+        document.getElementById('filterDate').value = getTodayLocalDate();
         document.getElementById('filterMonth').value = '';
         renderTable();
     }
@@ -440,7 +453,7 @@
         const selectedEmpId = document.getElementById('filterEmp').value;
         const selectedDate = document.getElementById('filterDate').value;
         const selectedMonth = document.getElementById('filterMonth').value;
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayLocalDate();
 
         let displayList = [...currentEntries];
 
@@ -483,7 +496,7 @@
         tbody.innerHTML = '';
 
         const filteredEntries = getFilteredEntries();
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayLocalDate();
 
         if (filteredEntries.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7">Keine passenden Einträge für diese Filter-Kriterien gefunden.</td></tr>';
@@ -501,7 +514,7 @@
                 entry.pauses.forEach((p, idx) => {
                     let dur = timeToMinutes(p.end) - timeToMinutes(p.start);
                     if (dur > 0) pauseSumMin += dur;
-                    pauseDetailsHTML += `<span class="pause-detail">#${idx+1}: ${p.start} - ${p.end}</span>`;
+                    pauseDetailsHTML += `<span class="pause-detail">#${idx+1}: ${p.start} bis ${p.end}</span>`;
                 });
             }
 
@@ -553,7 +566,6 @@
         renderTable();
     }
 
-    // --- NEUER CSV-EXPORT: PAUSEN UNTEREINANDER IN SPALTE D & E ---
     function exportDataCSV() {
         const entries = getFilteredEntries();
         if (entries.length === 0) {
@@ -561,7 +573,6 @@
             return;
         }
 
-        // Feste Spaltenstruktur: Mitarbeiter, Datum, Arbeitsbeginn, Pause Beginn (Spalte D), Pause Ende (Spalte E), Pausen Gesamt, Arbeitsende, Netto-Arbeitszeit
         let headerCols = ["Mitarbeiter", "Datum", "Arbeitsbeginn", "Pause Beginn", "Pause Ende", "Pausen Gesamt", "Arbeitsende", "Netto-Arbeitszeit"];
         let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
         csvContent += headerCols.join(";") + "\n";
@@ -583,33 +594,31 @@
             let grossWork = (startMin && endMin && endMin > startMin) ? (endMin - startMin) : 0;
             let netWorkMin = Math.max(0, grossWork - pauseSumMin);
 
-            // Wenn es keine Pausen gibt, trotzdem mindestens eine Zeile ausgeben
             if (pauses.length === 0) {
                 let row = [
                     `"${empName}"`,
                     `"${entry.date}"`,
                     `"${entry.start_time || ''}"`,
-                    `""`, // Pause Beginn leer
-                    `""`, // Pause Ende leer
+                    `""`,
+                    `""`,
                     `"0 Min."`,
                     `"${entry.end_time || ''}"`,
                     `"${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}"`
                 ];
                 csvContent += row.join(";") + "\n";
             } else {
-                // Für jede Pause eine eigene Zeile generieren
                 pauses.forEach((p, index) => {
                     let isFirst = (index === 0);
 
                     let row = [
-                        isFirst ? `"${empName}"` : `""`,       // Name nur in der ersten Zeile, danach leer
-                        isFirst ? `"${entry.date}"` : `""`,     // Datum nur in der ersten Zeile, danach leer
-                        isFirst ? `"${entry.start_time || ''}"` : `""`, // Arbeitsbeginn nur in erster Zeile
-                        `"${p.start}"`,                         // Pause Beginn (Spalte D)
-                        `"${p.end}"`,                           // Pause Ende (Spalte E)
-                        isFirst ? `"${formatMinutes(pauseSumMin)}"` : `""`, // Pausen Gesamt nur in erster Zeile
-                        isFirst ? `"${entry.end_time || ''}"` : `""`,       // Arbeitsende nur in erster Zeile
-                        isFirst ? `"${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}"` : `""` // Netto nur in erster Zeile
+                        isFirst ? `"${empName}"` : `""`,
+                        isFirst ? `"${entry.date}"` : `""`,
+                        isFirst ? `"${entry.start_time || ''}"` : `""`,
+                        `"${p.start}"`,
+                        `"${p.end}"`,
+                        isFirst ? `"${formatMinutes(pauseSumMin)}"` : `""`,
+                        isFirst ? `"${entry.end_time || ''}"` : `""`,
+                        isFirst ? `"${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}"` : `""`
                     ];
                     csvContent += row.join(";") + "\n";
                 });
@@ -639,7 +648,7 @@
     function openModal(entryId) {
         let entry = currentEntries.find(e => e.id === entryId);
         let empId = '';
-        let date = new Date().toISOString().split('T')[0];
+        let date = getTodayLocalDate();
 
         if (entry) {
             empId = entry.employee_id;

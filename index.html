@@ -220,7 +220,17 @@
     const empSelect = document.getElementById('employeeSelect');
     const trackerEmpSelect = document.getElementById('trackerEmpSelect');
     const dateInput = document.getElementById('date');
-    dateInput.valueAsDate = new Date();
+
+    // Lokales Datum ermitteln (verhindert UTC-Mitternachtsfehler)
+    function getTodayLocalDate() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    dateInput.value = getTodayLocalDate();
 
     let timerInterval = null;
     let currentActivePause = null;
@@ -367,7 +377,8 @@
         } else {
             const startStr = currentActivePause.startStr;
             const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-            const dateStr = now.toISOString().split('T')[0];
+            // Nutze lokales Datum für den Tag der Beendigung
+            const dateStr = getTodayLocalDate();
 
             const existingData = await fetchDayData(empId, dateStr);
             if (existingData && existingData.pauses) {
@@ -427,7 +438,6 @@
         const newPauseStart = document.getElementById('pauseStart').value;
         const newPauseEnd = document.getElementById('pauseEnd').value;
 
-        // 1. Arbeitszeiten-Grundlogik (Ende nach Beginn)
         if (newStart && newEnd) {
             if (timeToMinutes(newEnd) <= timeToMinutes(newStart)) {
                 alert('Fehler: Das Arbeitsende muss nach dem Arbeitsbeginn liegen!');
@@ -438,7 +448,6 @@
         const existingData = await fetchDayData(empId, date) || { pauses: [] };
         let pauses = [...(existingData.pauses || [])];
 
-        // Wenn eine manuelle Pause eingetragen werden soll
         if (newPauseStart && newPauseEnd) {
             let pStartMin = timeToMinutes(newPauseStart);
             let pEndMin = timeToMinutes(newPauseEnd);
@@ -448,7 +457,6 @@
                 return;
             }
 
-            // Prüfung gegen Arbeitsbeginn / Arbeitsende
             if (newStart && pStartMin < timeToMinutes(newStart)) {
                 alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
                 return;
@@ -458,7 +466,6 @@
                 return;
             }
 
-            // Überschneidungsprüfung mit bestehenden Pausen
             for (let p of pauses) {
                 if (checkOverlap(pStartMin, pEndMin, timeToMinutes(p.start), timeToMinutes(p.end))) {
                     alert(`Fehler: Die neue Pause überschneidet sich mit einer bereits vorhandenen Pause (${p.start} - ${p.end} Uhr)!`);
@@ -469,7 +476,6 @@
             pauses.push({ start: newPauseStart, end: newPauseEnd });
         }
 
-        // Wenn Arbeitsbeginn / Arbeitsende neu gesetzt werden, prüfen ob sie zu den *bereits vorhandenen* Pausen passen
         let finalStart = newStart || existingData.start_time || '';
         let finalEnd = newEnd || existingData.end_time || '';
 
