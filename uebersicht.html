@@ -263,7 +263,6 @@
         .btn-edit { background: var(--warning); color: black; }
         .btn-del { background: var(--danger); color: white; }
 
-        /* Login Modal & Edit Modal */
         .modal {
             display: none;
             position: fixed;
@@ -422,9 +421,8 @@
 </div>
 
 <script>
-    const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
+    const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
-    // PIN Definitionen
     const PINS = {
         '1810': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
         '1904': { department: 'Service', roleName: 'Service-Leitung' },
@@ -453,7 +451,7 @@
         const errorDiv = document.getElementById('loginError');
 
         if (PINS[pin]) {
-            const authData = PINS[pin];
+            const authData = { ...PINS[pin], pin: pin };
             sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('pinInput').value = '';
@@ -472,7 +470,6 @@
 
     function setupUI(authData) {
         const statusText = document.getElementById('userStatusText');
-
         if (authData.department === 'ALL') {
             statusText.innerHTML = `Eingeloggt als: <span class="badge badge-admin">${authData.roleName}</span>`;
         } else if (authData.department === 'Küche') {
@@ -482,7 +479,6 @@
         }
     }
 
-    // Lokales Datum ermitteln (ohne UTC-Zeitverschiebung)
     function getTodayLocalDate() {
         const now = new Date();
         const year = now.getFullYear();
@@ -508,33 +504,54 @@
         return Math.max(start1, start2) < Math.min(end1, end2);
     }
 
+    // Sichere API-Hilfsfunktion über den Cloudflare Worker
+    async function apiRequest(path, action, data = null) {
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
+        try {
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: session.pin,
+                    path: path,
+                    action: action,
+                    data: data
+                })
+            });
+            if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
+            return await res.json();
+        } catch (e) {
+            console.error('API Fehler:', e);
+            return null;
+        }
+    }
+
     async function loadData() {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
-            const [empRes, timeRes, activeRes] = await Promise.all([
-                fetch(FIREBASE_URL + 'employees.json'),
-                fetch(FIREBASE_URL + 'time_entries.json'),
-                fetch(FIREBASE_URL + 'active_pauses.json')
+            const [rawEmployees, timeData, activePausesRes] = await Promise.all([
+                apiRequest('employees', 'get'),
+                apiRequest('time_entries', 'get'),
+                apiRequest('active_pauses', 'get')
             ]);
 
-            const rawEmployees = await empRes.json() || {};
-            const timeData = await timeRes.json() || {};
-            activePauses = await activeRes.json() || {};
+            const employeesSafe = rawEmployees || {};
+            const timeDataSafe = timeData || {};
+            activePauses = activePausesRes || {};
 
-            // Nur Mitarbeiter der eigenen Abteilung laden (bzw. alle für Admin)
             employees = {};
-            Object.keys(rawEmployees).forEach(id => {
-                const emp = rawEmployees[id];
+            Object.keys(employeesSafe).forEach(id => {
+                const emp = employeesSafe[id];
                 const empDept = emp.department || 'Küche';
                 if (session.department === 'ALL' || session.department === empDept) {
                     employees[id] = emp;
                 }
             });
 
-            currentEntries = Object.keys(timeData).map(key => {
+            currentEntries = Object.keys(timeDataSafe).map(key => {
                 return {
                     id: key,
-                    ...timeData[key]
+                    ...timeDataSafe[key]
                 };
             });
 
@@ -562,7 +579,6 @@
     }
 
     function getFilteredEntries() {
-        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         const selectedEmpId = document.getElementById('filterEmp').value;
         const selectedDate = document.getElementById('filterDate').value;
         const selectedMonth = document.getElementById('filterMonth').value;
@@ -571,9 +587,7 @@
         let displayList = [...currentEntries];
 
         Object.keys(activePauses).forEach(empId => {
-            // Nur anzeigen, wenn der Mitarbeiter zur erlaubten Abteilung gehört
             if (!employees[empId]) return;
-
             const activeData = activePauses[empId];
             if (!activeData) return;
 
@@ -682,6 +696,13 @@
         renderTable();
     }
 
+    async function deleteEntry(entryId) {
+        if (confirm('Diesen Zeiteintrag wirklich löschen?')) {
+            await apiRequest(`time_entries/${entryId}`, 'delete');
+            loadData();
+        }
+    }
+
     function exportDataCSV() {
         const entries = getFilteredEntries();
         if (entries.length === 0) {
@@ -725,7 +746,6 @@
             } else {
                 pauses.forEach((p, index) => {
                     let isFirst = (index === 0);
-
                     let row = [
                         isFirst ? `"${empName}"` : `""`,
                         isFirst ? `"${entry.date}"` : `""`,
@@ -883,7 +903,7 @@
             }
         }
 
-        const updatedData = {
+        const payload = {
             id: targetKey,
             employee_id: empId,
             date: date,
@@ -892,29 +912,13 @@
             pauses: newPauses
         };
 
-        if (entryId !== targetKey && !entryId.includes('_')) {
-            await fetch(FIREBASE_URL + `time_entries/${entryId}.json`, { method: 'DELETE' });
-        }
-
-        await fetch(FIREBASE_URL + `time_entries/${targetKey}.json`, {
-            method: 'PUT',
-            body: JSON.stringify(updatedData)
-        });
+        await apiRequest(`time_entries/${targetKey}`, 'put', payload);
 
         closeModal();
         loadData();
     }
 
-    async function deleteEntry(id) {
-        if (confirm('Eintrag wirklich löschen?')) {
-            await fetch(FIREBASE_URL + `time_entries/${id}.json`, { method: 'DELETE' });
-            loadData();
-        }
-    }
-
-    // Beim Laden prüfen
     checkAuth();
-    setInterval(loadData, 10000);
 </script>
 </body>
 </html>

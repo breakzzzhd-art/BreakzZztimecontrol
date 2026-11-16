@@ -174,7 +174,6 @@
             font-size: 14px;
         }
 
-        /* Login Modal Overlay */
         .modal {
             display: flex;
             position: fixed;
@@ -279,7 +278,7 @@
 </div>
 
 <script>
-    const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
+    const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
     // PIN Definitionen
     const PINS = {
@@ -310,7 +309,7 @@
         const errorDiv = document.getElementById('loginError');
 
         if (PINS[pin]) {
-            const authData = PINS[pin];
+            const authData = { ...PINS[pin], pin: pin };
             sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('pinInput').value = '';
@@ -339,7 +338,6 @@
         }
     }
 
-    // Lokales Datum ermitteln (verhindert UTC-Mitternachtsfehler)
     function getTodayLocalDate() {
         const now = new Date();
         const year = now.getFullYear();
@@ -353,40 +351,56 @@
     let timerInterval = null;
     let currentActivePause = null;
 
-    async function loadEmployees() {
+    // Hilfsfunktion für den sicheren Worker-Aufruf
+    async function apiRequest(path, action, data = null) {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
-            const res = await fetch(FIREBASE_URL + 'employees.json');
-            const data = await res.json();
-            
-            empSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            trackerEmpSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
-            
-            if (data) {
-                Object.keys(data).forEach(id => {
-                    const emp = data[id];
-                    const empDept = emp.department || 'Küche'; // Fallback für alte Einträge
-
-                    // Filterung nach Abteilung
-                    if (session.department !== 'ALL' && session.department !== empDept) {
-                        return;
-                    }
-
-                    let opt1 = new Option(`${emp.name} (${empDept})`, id);
-                    let opt2 = new Option(`${emp.name} (${empDept})`, id);
-                    empSelect.add(opt1);
-                    trackerEmpSelect.add(opt2);
-                });
-
-                const urlParams = new URLSearchParams(window.location.search);
-                const empParam = urlParams.get('emp');
-                if (empParam) {
-                    trackerEmpSelect.value = empParam;
-                    checkActivePauseStatus();
-                }
-            }
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: session.pin,
+                    path: path,
+                    action: action,
+                    data: data
+                })
+            });
+            if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
+            return await res.json();
         } catch (e) {
-            console.error('Fehler beim Laden der Mitarbeiter:', e);
+            console.error('API Fehler:', e);
+            return null;
+        }
+    }
+
+    async function loadEmployees() {
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
+        const data = await apiRequest('employees', 'get');
+        
+        empSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+        trackerEmpSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
+        
+        if (data) {
+            Object.keys(data).forEach(id => {
+                const emp = data[id];
+                const empDept = emp.department || 'Küche';
+
+                if (session.department !== 'ALL' && session.department !== empDept) {
+                    return;
+                }
+
+                let opt1 = new Option(`${emp.name} (${empDept})`, id);
+                let opt2 = new Option(`${emp.name} (${empDept})`, id);
+                empSelect.add(opt1);
+                trackerEmpSelect.add(opt2);
+            });
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const empParam = urlParams.get('emp');
+            if (empParam) {
+                trackerEmpSelect.value = empParam;
+                checkActivePauseStatus();
+            }
         }
     }
 
@@ -402,10 +416,7 @@
 
     async function fetchDayData(empId, date) {
         if (!empId || !date) return null;
-        try {
-            const res = await fetch(FIREBASE_URL + `time_entries/${empId}_${date}.json`);
-            return await res.json();
-        } catch (e) { return null; }
+        return await apiRequest(`time_entries/${empId}_${date}`, 'get');
     }
 
     async function checkDayStatus() {
@@ -447,36 +458,31 @@
             return;
         }
 
-        try {
-            const res = await fetch(FIREBASE_URL + `active_pauses/${empId}.json`);
-            const activeData = await res.json();
+        const activeData = await apiRequest(`active_pauses/${empId}`, 'get');
 
-            if (activeData && activeData.startTime) {
-                currentActivePause = activeData;
-                btn.textContent = '▶️ Pause Beenden';
-                btn.classList.add('active');
-                timerContainer.style.display = 'block';
+        if (activeData && activeData.startTime) {
+            currentActivePause = activeData;
+            btn.textContent = '▶️ Pause Beenden';
+            btn.classList.add('active');
+            timerContainer.style.display = 'block';
 
-                const startTimestamp = new Date(activeData.startTime).getTime();
+            const startTimestamp = new Date(activeData.startTime).getTime();
 
-                timerInterval = setInterval(() => {
-                    const now = new Date().getTime();
-                    const diffMs = now - startTimestamp;
+            timerInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const diffMs = now - startTimestamp;
 
-                    const hours = String(Math.floor(diffMs / 3600000)).padStart(2, '0');
-                    const minutes = String(Math.floor((diffMs % 3600000) / 60000)).padStart(2, '0');
-                    const seconds = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
+                const hours = String(Math.floor(diffMs / 3600000)).padStart(2, '0');
+                const minutes = String(Math.floor((diffMs % 3600000) / 60000)).padStart(2, '0');
+                const seconds = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
 
-                    document.getElementById('timerDisplay').textContent = `${hours}:${minutes}:${seconds}`;
-                }, 1000);
-            } else {
-                currentActivePause = null;
-                btn.textContent = '⏸️ Pause Starten';
-                btn.classList.remove('active');
-                timerContainer.style.display = 'none';
-            }
-        } catch (e) {
-            console.error('Fehler beim Prüfen der aktiven Pause:', e);
+                document.getElementById('timerDisplay').textContent = `${hours}:${minutes}:${seconds}`;
+            }, 1000);
+        } else {
+            currentActivePause = null;
+            btn.textContent = '⏸️ Pause Starten';
+            btn.classList.remove('active');
+            timerContainer.style.display = 'none';
         }
     }
 
@@ -495,11 +501,7 @@
                 startStr: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
             };
 
-            await fetch(FIREBASE_URL + `active_pauses/${empId}.json`, {
-                method: 'PUT',
-                body: JSON.stringify(activePayload)
-            });
-
+            await apiRequest(`active_pauses/${empId}`, 'put', activePayload);
             checkActivePauseStatus();
         } else {
             const startStr = currentActivePause.startStr;
@@ -519,11 +521,7 @@
             }
 
             await savePauseToDatabase(empId, dateStr, startStr, endStr);
-
-            await fetch(FIREBASE_URL + `active_pauses/${empId}.json`, {
-                method: 'DELETE'
-            });
-
+            await apiRequest(`active_pauses/${empId}`, 'delete');
             checkActivePauseStatus();
         }
     }
@@ -544,10 +542,7 @@
             pauses: pauses
         };
 
-        await fetch(FIREBASE_URL + `time_entries/${entryKey}.json`, {
-            method: 'PUT',
-            body: JSON.stringify(payload)
-        });
+        await apiRequest(`time_entries/${entryKey}`, 'put', payload);
 
         alert(`Pause erfolgreich von ${startStr} bis ${endStr} gespeichert!`);
         if (empSelect.value === empId) checkDayStatus();
@@ -629,10 +624,7 @@
             pauses: pauses
         };
 
-        await fetch(FIREBASE_URL + `time_entries/${entryKey}.json`, {
-            method: 'PUT',
-            body: JSON.stringify(payload)
-        });
+        await apiRequest(`time_entries/${entryKey}`, 'put', payload);
 
         alert('Erfolgreich gespeichert!');
         document.getElementById('start').value = '';
@@ -642,7 +634,6 @@
         checkDayStatus();
     });
 
-    // Beim Laden Autorisierung prüfen
     checkAuth();
 </script>
 </body>

@@ -171,7 +171,8 @@
 
 <!-- PIN LOGIN MODAL -->
 <div id="loginModal" class="modal">
-    🔐 PIN-Eingabe erforderlich
+    <div class="modal-content">
+        🔐 PIN-Eingabe erforderlich
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Bitte gib deine PIN ein, um fortzufahren:</p>
         
         <form id="loginForm" onsubmit="handleLogin(event)">
@@ -221,9 +222,8 @@
 </div>
 
 <script>
-    const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
+    const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
-    // PIN Definitionen
     const PINS = {
         '1810': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
         '1904': { department: 'Service', roleName: 'Service-Leitung' },
@@ -248,7 +248,7 @@
         const errorDiv = document.getElementById('loginError');
 
         if (PINS[pin]) {
-            const authData = PINS[pin];
+            const authData = { ...PINS[pin], pin: pin };
             sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('pinInput').value = '';
@@ -281,19 +281,40 @@
         }
     }
 
+    // Sichere API-Funktion im selben Stil wie bei der Übersicht
+    async function apiRequest(path, action, data = null) {
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
+        try {
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: session.pin,
+                    path: path,
+                    action: action,
+                    data: data
+                })
+            });
+            if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
+            return await res.json();
+        } catch (e) {
+            console.error('API Fehler:', e);
+            return null;
+        }
+    }
+
     async function loadEmployees() {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         const list = document.getElementById('empList');
-        const res = await fetch(FIREBASE_URL + 'employees.json');
-        const data = await res.json();
+        
+        const data = await apiRequest('employees', 'get');
         
         list.innerHTML = '';
         if (data) {
             Object.keys(data).forEach(id => {
                 const emp = data[id];
-                const empDept = emp.department || 'Küche'; // Fallback für alte Einträge
+                const empDept = emp.department || 'Küche';
 
-                // Filterung nach Berechtigung (Admin sieht alles, andere nur ihre Abteilung)
                 if (session.department !== 'ALL' && session.department !== empDept) {
                     return;
                 }
@@ -319,19 +340,13 @@
         const name = document.getElementById('empName').value.trim();
         if (!name) return;
 
-        // Wenn Admin eingeloggt ist, nimm das Select-Feld. Ansonsten nimm die eigene Abteilung.
         let assignedDept = session.department;
         if (session.department === 'ALL') {
             assignedDept = document.getElementById('empDeptSelect').value;
         }
 
-        await fetch(FIREBASE_URL + 'employees.json', {
-            method: 'POST',
-            body: JSON.stringify({ 
-                name: name,
-                department: assignedDept 
-            })
-        });
+        // POST fügt einen neuen Eintrag in die Firebase-Liste hinzu
+        await apiRequest('employees', 'post', { name: name, department: assignedDept });
 
         document.getElementById('empName').value = '';
         loadEmployees();
@@ -339,12 +354,11 @@
 
     async function deleteEmp(id) {
         if (confirm('Mitarbeiter wirklich löschen?')) {
-            await fetch(FIREBASE_URL + `employees/${id}.json`, { method: 'DELETE' });
+            await apiRequest(`employees/${id}`, 'delete');
             loadEmployees();
         }
     }
 
-    // Beim Laden prüfen ob Login aktiv ist
     checkAuth();
 </script>
 </body>
