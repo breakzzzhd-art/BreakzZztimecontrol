@@ -218,6 +218,26 @@
             display: inline-block;
         }
 
+        .work-badge-live {
+            background: rgba(16, 185, 129, 0.25);
+            color: #34d399;
+            border: 1px solid var(--success);
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            display: inline-block;
+            font-weight: bold;
+            text-decoration: none;
+            animation: pulse 1.5s infinite;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .work-badge-live:hover {
+            background: rgba(16, 185, 129, 0.4);
+            transform: scale(1.02);
+        }
+
         .pause-badge-live {
             background: rgba(239, 68, 68, 0.25);
             color: #f87171;
@@ -432,6 +452,7 @@
     let employees = {};
     let currentEntries = [];
     let activePauses = {};
+    let activeWork = {};
 
     function checkAuth() {
         const session = sessionStorage.getItem('breakzzz_auth');
@@ -493,6 +514,15 @@
         return h * 60 + m;
     }
 
+    function getShiftMinutes(timeStr, startStr) {
+        let m = timeToMinutes(timeStr);
+        let s = timeToMinutes(startStr);
+        if (m > 0 && s > 0 && m < s) {
+            m += 1440;
+        }
+        return m;
+    }
+
     function formatMinutes(min) {
         if (min <= 0) return '0 Min.';
         let h = Math.floor(min / 60);
@@ -504,7 +534,6 @@
         return Math.max(start1, start2) < Math.min(end1, end2);
     }
 
-    // Sichere API-Hilfsfunktion über den Cloudflare Worker
     async function apiRequest(path, action, data = null) {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
@@ -529,15 +558,17 @@
     async function loadData() {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
-            const [rawEmployees, timeData, activePausesRes] = await Promise.all([
+            const [rawEmployees, timeData, activePausesRes, activeWorkRes] = await Promise.all([
                 apiRequest('employees', 'get'),
                 apiRequest('time_entries', 'get'),
-                apiRequest('active_pauses', 'get')
+                apiRequest('active_pauses', 'get'),
+                apiRequest('active_work', 'get')
             ]);
 
             const employeesSafe = rawEmployees || {};
             const timeDataSafe = timeData || {};
             activePauses = activePausesRes || {};
+            activeWork = activeWorkRes || {};
 
             employees = {};
             Object.keys(employeesSafe).forEach(id => {
@@ -586,22 +617,52 @@
 
         let displayList = [...currentEntries];
 
-        Object.keys(activePauses).forEach(empId => {
-            if (!employees[empId]) return;
-            const activeData = activePauses[empId];
-            if (!activeData) return;
+        Object.keys(activeWork).forEach(empId => {
+            if (!employees[empId] || !activeWork[empId]) return;
+            const workData = activeWork[empId];
+            const workDate = workData.dateStr || todayStr;
+            const workKey = workData.entryKey || `${empId}_${workDate}`;
 
-            const existingEntryIndex = displayList.findIndex(e => e.employee_id === empId && e.date === todayStr);
+            const existingIndex = displayList.findIndex(e => 
+                e.id === workKey || (e.employee_id === empId && e.date === workDate && !e.end_time)
+            );
 
-            if (existingEntryIndex === -1) {
+            if (existingIndex === -1) {
                 displayList.push({
-                    id: `${empId}_${todayStr}`,
+                    id: workKey,
+                    employee_id: empId,
+                    date: workDate,
+                    start_time: workData.startStr || '',
+                    end_time: '',
+                    pauses: [],
+                    isLiveEntry: true
+                });
+            } else {
+                displayList[existingIndex].isLiveEntry = true;
+            }
+        });
+
+        Object.keys(activePauses).forEach(empId => {
+            if (!employees[empId] || !activePauses[empId]) return;
+            const pauseData = activePauses[empId];
+            const targetKey = pauseData.entryKey;
+
+            const existingIndex = displayList.findIndex(e => 
+                (targetKey && e.id === targetKey) || (e.employee_id === empId && e.date === todayStr && !e.end_time)
+            );
+
+            if (existingIndex === -1) {
+                displayList.push({
+                    id: targetKey || `${empId}_${todayStr}`,
                     employee_id: empId,
                     date: todayStr,
                     start_time: '',
                     end_time: '',
-                    pauses: []
+                    pauses: [],
+                    isLiveEntry: true
                 });
+            } else {
+                displayList[existingIndex].isLiveEntry = true;
             }
         });
 
@@ -618,7 +679,10 @@
                 return false;
             }
             return true;
-        }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        }).sort((a, b) => {
+            if (b.date !== a.date) return new Date(b.date || 0) - new Date(a.date || 0);
+            return timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+        });
     }
 
     function renderTable() {
@@ -637,12 +701,17 @@
             const empId = entry.employee_id;
             const empName = employees[empId]?.name || 'Unbekannt';
             
+            const currentActiveWork = (!entry.end_time && activeWork[empId] && (activeWork[empId].entryKey === entry.id || entry.isLiveEntry)) ? activeWork[empId] : null;
+            const effectiveStartTime = entry.start_time || (currentActiveWork ? currentActiveWork.startStr : '');
+
             let pauseSumMin = 0;
             let pauseDetailsHTML = '';
 
             if (entry.pauses && Array.isArray(entry.pauses)) {
                 entry.pauses.forEach((p, idx) => {
-                    let dur = timeToMinutes(p.end) - timeToMinutes(p.start);
+                    let pStart = getShiftMinutes(p.start, effectiveStartTime);
+                    let pEnd = getShiftMinutes(p.end, effectiveStartTime);
+                    let dur = pEnd - pStart;
                     if (dur > 0) pauseSumMin += dur;
                     pauseDetailsHTML += `<span class="pause-detail">#${idx+1}: ${p.start} bis ${p.end}</span>`;
                 });
@@ -651,7 +720,7 @@
             const activePause = activePauses[empId];
             let liveStatusHTML = '';
 
-            if (activePause && entry.date === todayStr) {
+            if (activePause && !entry.end_time && (activePause.entryKey === entry.id || entry.isLiveEntry)) {
                 liveStatusHTML = `
                     <a href="index.html?emp=${empId}" class="pause-badge-live" title="Klicken, um Stoppuhr zu öffnen">
                         🔴 JETZT IN PAUSE (seit ${activePause.startStr} Uhr) ➔
@@ -659,9 +728,19 @@
                 `;
             }
 
-            let startMin = timeToMinutes(entry.start_time);
-            let endMin = timeToMinutes(entry.end_time);
-            let grossWork = (startMin && endMin && endMin > startMin) ? (endMin - startMin) : 0;
+            // Klickbarer, pulsierender Live-Badge für "Im Dienst"
+            let endTimeHTML = entry.end_time || '-';
+            if (!entry.end_time && currentActiveWork) {
+                endTimeHTML = `
+                    <a href="index.html?emp=${empId}" class="work-badge-live" title="Klicken, um Arbeitsende zu erfassen">
+                        🟢 IM DIENST (seit ${currentActiveWork.startStr} Uhr) ➔
+                    </a>
+                `;
+            }
+
+            let startMin = timeToMinutes(effectiveStartTime);
+            let adjEndMin = getShiftMinutes(entry.end_time, effectiveStartTime);
+            let grossWork = (startMin && entry.end_time && adjEndMin > startMin) ? (adjEndMin - startMin) : 0;
             let netWorkMin = Math.max(0, grossWork - pauseSumMin);
 
             let entryDate = entry.date || todayStr;
@@ -672,13 +751,13 @@
             tr.innerHTML = `
                 <td><strong>${empName}</strong></td>
                 <td><strong>${formattedDate}</strong></td>
-                <td>${entry.start_time || '-'}</td>
+                <td>${effectiveStartTime || '-'}</td>
                 <td>
                     ${liveStatusHTML}
                     <div class="pause-badge" style="margin-top: 4px;">⏱️ Gesamt: ${formatMinutes(pauseSumMin)}</div>
                     ${pauseDetailsHTML}
                 </td>
-                <td>${entry.end_time || '-'}</td>
+                <td>${endTimeHTML}</td>
                 <td><strong style="color: var(--success);">${grossWork > 0 ? formatMinutes(netWorkMin) : '-'}</strong></td>
                 <td>
                     <button class="btn btn-edit" onclick="openModal('${entry.id}')">Bearbeiten</button>
@@ -721,14 +800,16 @@
 
             if (pauses.length > 0) {
                 pauses.forEach(p => {
-                    let dur = timeToMinutes(p.end) - timeToMinutes(p.start);
+                    let pStart = getShiftMinutes(p.start, entry.start_time);
+                    let pEnd = getShiftMinutes(p.end, entry.start_time);
+                    let dur = pEnd - pStart;
                     if (dur > 0) pauseSumMin += dur;
                 });
             }
 
             let startMin = timeToMinutes(entry.start_time);
-            let endMin = timeToMinutes(entry.end_time);
-            let grossWork = (startMin && endMin && endMin > startMin) ? (endMin - startMin) : 0;
+            let adjEndMin = getShiftMinutes(entry.end_time, entry.start_time);
+            let grossWork = (startMin && entry.end_time && adjEndMin > startMin) ? (adjEndMin - startMin) : 0;
             let netWorkMin = Math.max(0, grossWork - pauseSumMin);
 
             if (pauses.length === 0) {
@@ -793,11 +874,12 @@
             const parts = entryId.split('_');
             empId = parts[0];
             date = parts[1] || date;
+            const activeW = activeWork[empId];
             entry = {
                 id: entryId,
                 employee_id: empId,
                 date: date,
-                start_time: '',
+                start_time: activeW ? activeW.startStr : '',
                 end_time: '',
                 pauses: []
             };
@@ -839,13 +921,15 @@
         const entryId = document.getElementById('editEntryId').value;
         const empId = document.getElementById('editEmpId').value;
         const date = document.getElementById('editDate').value;
-        const targetKey = `${empId}_${date}`;
+        const targetKey = entryId || `${empId}_${date}_${Date.now()}`;
 
         const newStart = document.getElementById('editStart').value;
         const newEnd = document.getElementById('editEnd').value;
+        let startMin = timeToMinutes(newStart);
+        let adjEndMin = getShiftMinutes(newEnd, newStart);
 
         if (newStart && newEnd) {
-            if (timeToMinutes(newEnd) <= timeToMinutes(newStart)) {
+            if (adjEndMin <= startMin) {
                 alert('Fehler: Das Arbeitsende muss nach dem Arbeitsbeginn liegen!');
                 return;
             }
@@ -859,26 +943,26 @@
             let pEnd = row.querySelector('.m-pause-end').value;
 
             if (pStart && pEnd) {
-                let pStartMin = timeToMinutes(pStart);
-                let pEndMin = timeToMinutes(pEnd);
+                let pStartMin = getShiftMinutes(pStart, newStart);
+                let pEndMin = getShiftMinutes(pEnd, newStart);
 
                 if (pEndMin <= pStartMin) {
                     alert(`Fehler bei einer Pause: Das Pausen-Ende (${pEnd}) muss nach dem Pausen-Beginn (${pStart}) liegen!`);
                     return;
                 }
 
-                if (newStart && pStartMin < timeToMinutes(newStart)) {
+                if (newStart && pStartMin < startMin) {
                     alert(`Fehler: Eine Pause (${pStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
                     return;
                 }
 
-                if (newEnd && pEndMin > timeToMinutes(newEnd)) {
+                if (newEnd && pEndMin > adjEndMin) {
                     alert(`Fehler: Eine Pause (${pEnd} Uhr) kann nicht nach dem Arbeitsende (${newEnd} Uhr) enden!`);
                     return;
                 }
 
                 for (let existingP of newPauses) {
-                    if (checkOverlap(pStartMin, pEndMin, timeToMinutes(existingP.start), timeToMinutes(existingP.end))) {
+                    if (checkOverlap(pStartMin, pEndMin, getShiftMinutes(existingP.start, newStart), getShiftMinutes(existingP.end, newStart))) {
                         alert(`Fehler: Pausen dürfen sich nicht überschneiden!`);
                         return;
                     }
@@ -889,15 +973,15 @@
         }
 
         if (newPauses.length > 0) {
-            newPauses.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
-            let firstPauseStart = timeToMinutes(newPauses[0].start);
-            let lastPauseEnd = timeToMinutes(newPauses[newPauses.length - 1].end);
+            newPauses.sort((a, b) => getShiftMinutes(a.start, newStart) - getShiftMinutes(b.start, newStart));
+            let firstPauseStart = getShiftMinutes(newPauses[0].start, newStart);
+            let lastPauseEnd = getShiftMinutes(newPauses[newPauses.length - 1].end, newStart);
 
-            if (newStart && timeToMinutes(newStart) > firstPauseStart) {
+            if (newStart && startMin > firstPauseStart) {
                 alert(`Fehler: Der Arbeitsbeginn (${newStart} Uhr) kann nicht nach der ersten Pause (${newPauses[0].start} Uhr) liegen!`);
                 return;
             }
-            if (newEnd && timeToMinutes(newEnd) < lastPauseEnd) {
+            if (newEnd && adjEndMin < lastPauseEnd) {
                 alert(`Fehler: Das Arbeitsende (${newEnd} Uhr) kann nicht vor dem Ende der letzten Pause (${newPauses[newPauses.length - 1].end} Uhr) liegen!`);
                 return;
             }

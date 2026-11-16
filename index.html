@@ -132,16 +132,16 @@
             border: none;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 18px;
+            margin-top: 12px;
             transition: 0.2s;
         }
 
         button:hover { background: var(--primary-hover); }
 
         .btn-live {
-            background: var(--warning);
-            color: black;
-            font-size: 16px;
+            background: var(--success);
+            color: white;
+            font-size: 15px;
         }
 
         .btn-live.active {
@@ -149,11 +149,44 @@
             color: white;
         }
 
-        .timer-display {
-            font-size: 32px;
-            font-weight: bold;
+        .btn-pause-live {
+            background: var(--warning);
+            color: black;
+            font-size: 15px;
+        }
+
+        .btn-pause-live.active {
+            background: var(--danger);
+            color: white;
+        }
+
+        .timer-row {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .timer-box {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
             text-align: center;
-            margin: 15px 0;
+        }
+
+        .timer-display {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 6px;
+            font-family: monospace;
+            color: var(--success);
+        }
+
+        .timer-display-pause {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 6px;
             font-family: monospace;
             color: var(--warning);
         }
@@ -224,24 +257,42 @@
         <a href="uebersicht.html">📊 Übersicht</a>
     </div>
 
-    <!-- Live Pausen-Tracker -->
+    <!-- Kombinierter Live-Tracker (Arbeitszeit & Pause) -->
     <div class="card">
         <div class="user-info-bar">
             <span id="userStatusText">Angemeldet</span>
             <button onclick="logout()" style="width: auto; padding: 4px 10px; margin: 0; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--danger);">Abmelden</button>
         </div>
 
-        <h3>🔴 Live Pausen-Stoppuhr</h3>
-        <label for="trackerEmpSelect">Mitarbeiter auswählen:</label>
-        <select id="trackerEmpSelect" onchange="checkActivePauseStatus()">
+        <h3>⚡ Live-Steuerung (Arbeit & Pause)</h3>
+        <label for="centralEmpSelect">Mitarbeiter auswählen:</label>
+        <select id="centralEmpSelect" onchange="onEmployeeSelected()">
             <option value="">-- Bitte wählen --</option>
         </select>
 
-        <div id="timerContainer" style="display: none;">
-            <div class="timer-display" id="timerDisplay">00:00:00</div>
+        <!-- Arbeitszeit Sektion -->
+        <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <div style="font-size: 13px; font-weight: bold; color: var(--text-muted);">ARBEITSZEIT</div>
+            <div id="workTimerContainer" style="display: none;" class="timer-row">
+                <div class="timer-box">
+                    <span style="font-size: 11px; color: var(--text-muted);">Dauer im Dienst</span>
+                    <div class="timer-display" id="workTimerDisplay">00:00:00</div>
+                </div>
+            </div>
+            <button id="btnWorkTracker" class="btn-live" onclick="toggleWorkTracker()">🟢 Arbeitsbeginn erfassen</button>
         </div>
 
-        <button id="btnTracker" class="btn-live" onclick="togglePauseTracker()">⏸️ Pause Starten</button>
+        <!-- Pausen Sektion -->
+        <div style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <div style="font-size: 13px; font-weight: bold; color: var(--text-muted);">PAUSEN-ZEIT</div>
+            <div id="pauseTimerContainer" style="display: none;" class="timer-row">
+                <div class="timer-box">
+                    <span style="font-size: 11px; color: var(--text-muted);">Dauer der Pause</span>
+                    <div class="timer-display-pause" id="timerDisplay">00:00:00</div>
+                </div>
+            </div>
+            <button id="btnTracker" class="btn-pause-live" onclick="togglePauseTracker()" disabled style="opacity: 0.5;">⏸️ Pause Starten</button>
+        </div>
     </div>
 
     <!-- Manuelle Erfassung -->
@@ -271,7 +322,7 @@
         </form>
 
         <div id="historyBox" style="margin-top: 20px; display: none;">
-            <h4>📋 Pausen an diesem Tag:</h4>
+            <h4>📋 Einträge & Pausen an diesem Tag:</h4>
             <ul id="pauseHistoryList" class="history-list"></ul>
         </div>
     </div>
@@ -280,15 +331,14 @@
 <script>
     const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
-    // PIN Definitionen
     const PINS = {
         '1810': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
         '1904': { department: 'Service', roleName: 'Service-Leitung' },
         '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
     };
 
+    const centralEmpSelect = document.getElementById('centralEmpSelect');
     const empSelect = document.getElementById('employeeSelect');
-    const trackerEmpSelect = document.getElementById('trackerEmpSelect');
     const dateInput = document.getElementById('date');
 
     function checkAuth() {
@@ -328,7 +378,6 @@
 
     function setupUI(authData) {
         const statusText = document.getElementById('userStatusText');
-
         if (authData.department === 'ALL') {
             statusText.innerHTML = `Eingeloggt als: <span class="badge badge-admin">${authData.roleName}</span>`;
         } else if (authData.department === 'Küche') {
@@ -350,8 +399,9 @@
 
     let timerInterval = null;
     let currentActivePause = null;
+    let workTimerInterval = null;
+    let currentActiveWork = null;
 
-    // Hilfsfunktion für den sicheren Worker-Aufruf
     async function apiRequest(path, action, data = null) {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
@@ -377,8 +427,8 @@
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         const data = await apiRequest('employees', 'get');
         
+        centralEmpSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
         empSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
-        trackerEmpSelect.innerHTML = '<option value="">-- Bitte wählen --</option>';
         
         if (data) {
             Object.keys(data).forEach(id => {
@@ -391,49 +441,76 @@
 
                 let opt1 = new Option(`${emp.name} (${empDept})`, id);
                 let opt2 = new Option(`${emp.name} (${empDept})`, id);
-                empSelect.add(opt1);
-                trackerEmpSelect.add(opt2);
+                centralEmpSelect.add(opt1);
+                empSelect.add(opt2);
             });
 
             const urlParams = new URLSearchParams(window.location.search);
             const empParam = urlParams.get('emp');
             if (empParam) {
-                trackerEmpSelect.value = empParam;
-                checkActivePauseStatus();
+                centralEmpSelect.value = empParam;
+                onEmployeeSelected();
             }
         }
     }
 
     function timeToMinutes(t) {
-        if(!t) return 0;
+        if (!t || !t.includes(':')) return 0;
         let [h, m] = t.split(':').map(Number);
         return h * 60 + m;
+    }
+
+    // Nachtschicht-Erkennung: Nur bis maximal 03:00 Uhr nachts (<= 180 Min) als Folgetag werten
+    function getShiftMinutes(timeStr, startStr) {
+        let m = timeToMinutes(timeStr);
+        let s = timeToMinutes(startStr);
+        if (m >= 0 && m <= 180 && m < s) {
+            m += 1440;
+        }
+        return m;
     }
 
     function checkOverlap(start1, end1, start2, end2) {
         return Math.max(start1, start2) < Math.min(end1, end2);
     }
 
-    async function fetchDayData(empId, date) {
-        if (!empId || !date) return null;
-        return await apiRequest(`time_entries/${empId}_${date}`, 'get');
+    async function fetchDayEntries(empId, date) {
+        if (!empId || !date) return [];
+        const allEntries = await apiRequest('time_entries', 'get') || {};
+        return Object.keys(allEntries)
+            .map(key => ({ id: key, ...allEntries[key] }))
+            .filter(e => e.employee_id === empId && e.date === date);
     }
 
     async function checkDayStatus() {
         const empId = empSelect.value;
         const date = dateInput.value;
-        const data = await fetchDayData(empId, date);
+        const entries = await fetchDayEntries(empId, date);
 
         const historyBox = document.getElementById('historyBox');
         const list = document.getElementById('pauseHistoryList');
 
-        if (data && data.pauses && data.pauses.length > 0) {
+        if (entries.length > 0) {
             historyBox.style.display = 'block';
             list.innerHTML = '';
-            data.pauses.forEach((p, i) => {
-                let li = document.createElement('li');
-                li.innerHTML = `<span>Pause ${i+1}:</span> <strong>${p.start} - ${p.end} Uhr</strong>`;
-                list.appendChild(li);
+            entries.forEach((entry, sIdx) => {
+                let shiftLabel = entries.length > 1 ? `Schicht ${sIdx + 1}: ` : '';
+                let timeInfo = (entry.start_time || entry.end_time) 
+                    ? `${entry.start_time || '?'} - ${entry.end_time || 'offen'} Uhr` 
+                    : 'Nur Pausen';
+                
+                let liHeader = document.createElement('li');
+                liHeader.style.background = 'rgba(59, 130, 246, 0.15)';
+                liHeader.innerHTML = `<span><strong>${shiftLabel}${timeInfo}</strong></span> <span>${(entry.pauses || []).length} Pause(n)</span>`;
+                list.appendChild(liHeader);
+
+                if (entry.pauses && entry.pauses.length > 0) {
+                    entry.pauses.forEach((p, i) => {
+                        let li = document.createElement('li');
+                        li.innerHTML = `<span style="padding-left: 10px;">↳ Pause ${i+1}:</span> <strong>${p.start} - ${p.end} Uhr</strong>`;
+                        list.appendChild(li);
+                    });
+                }
             });
         } else {
             historyBox.style.display = 'none';
@@ -443,17 +520,129 @@
     empSelect.addEventListener('change', checkDayStatus);
     dateInput.addEventListener('change', checkDayStatus);
 
+    function onEmployeeSelected() {
+        checkActiveWorkStatus();
+        checkActivePauseStatus();
+    }
+
+    // --- LIVE ARBEITSZEIT-TRACKER ---
+    async function checkActiveWorkStatus() {
+        const empId = centralEmpSelect.value;
+        const btnWork = document.getElementById('btnWorkTracker');
+        const workContainer = document.getElementById('workTimerContainer');
+        const btnPause = document.getElementById('btnTracker');
+
+        if (workTimerInterval) clearInterval(workTimerInterval);
+
+        if (!empId) {
+            btnWork.textContent = '🟢 Arbeitsbeginn erfassen';
+            btnWork.classList.remove('active');
+            workContainer.style.display = 'none';
+            currentActiveWork = null;
+            btnPause.disabled = true;
+            btnPause.style.opacity = '0.5';
+            return;
+        }
+
+        const activeData = await apiRequest(`active_work/${empId}`, 'get');
+
+        if (activeData && activeData.startTime) {
+            currentActiveWork = activeData;
+            btnWork.textContent = '🔴 Arbeitsende erfassen';
+            btnWork.classList.add('active');
+            workContainer.style.display = 'block';
+
+            btnPause.disabled = false;
+            btnPause.style.opacity = '1';
+
+            const startTimestamp = new Date(activeData.startTime).getTime();
+            workTimerInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const diffMs = now - startTimestamp;
+                const hours = String(Math.floor(diffMs / 3600000)).padStart(2, '0');
+                const minutes = String(Math.floor((diffMs % 3600000) / 60000)).padStart(2, '0');
+                const seconds = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
+                document.getElementById('workTimerDisplay').textContent = `${hours}:${minutes}:${seconds}`;
+            }, 1000);
+        } else {
+            currentActiveWork = null;
+            btnWork.textContent = '🟢 Arbeitsbeginn erfassen';
+            btnWork.classList.remove('active');
+            workContainer.style.display = 'none';
+
+            btnPause.disabled = true;
+            btnPause.style.opacity = '0.5';
+        }
+    }
+
+    async function toggleWorkTracker() {
+        const empId = centralEmpSelect.value;
+        if (!empId) {
+            alert('Bitte wähle zuerst einen Mitarbeiter aus!');
+            return;
+        }
+
+        const now = new Date();
+
+        if (!currentActiveWork) {
+            const dateStr = getTodayLocalDate();
+            const startStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            const newEntryKey = `${empId}_${dateStr}_${now.getTime()}`;
+
+            const activePayload = {
+                startTime: now.toISOString(),
+                startStr: startStr,
+                dateStr: dateStr,
+                entryKey: newEntryKey
+            };
+
+            await apiRequest(`active_work/${empId}`, 'put', activePayload);
+            checkActiveWorkStatus();
+        } else {
+            const activePauseCheck = await apiRequest(`active_pauses/${empId}`, 'get');
+            if (activePauseCheck && activePauseCheck.startTime) {
+                alert('Fehler: Die Arbeitszeit kann nicht beendet werden, solange der Mitarbeiter noch in Pause ist! Bitte zuerst die Pause beenden.');
+                return;
+            }
+
+            const startStr = currentActiveWork.startStr;
+            const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            const dateStr = currentActiveWork.dateStr || getTodayLocalDate();
+            const entryKey = currentActiveWork.entryKey || `${empId}_${dateStr}_${now.getTime()}`;
+
+            const existingData = await apiRequest(`time_entries/${entryKey}`, 'get') || { pauses: [] };
+
+            const payload = {
+                id: entryKey,
+                employee_id: empId,
+                date: dateStr,
+                start_time: startStr,
+                end_time: endStr,
+                pauses: existingData.pauses || []
+            };
+
+            await apiRequest(`time_entries/${entryKey}`, 'put', payload);
+            await apiRequest(`active_work/${empId}`, 'delete');
+
+            alert(`Arbeitszeit erfolgreich gespeichert (${startStr} bis ${endStr} Uhr)!`);
+            checkActiveWorkStatus();
+            checkActivePauseStatus();
+            if (empSelect.value === empId) checkDayStatus();
+        }
+    }
+
+    // --- LIVE PAUSEN-STOPPUHR ---
     async function checkActivePauseStatus() {
-        const empId = trackerEmpSelect.value;
+        const empId = centralEmpSelect.value;
         const btn = document.getElementById('btnTracker');
-        const timerContainer = document.getElementById('timerContainer');
 
         if (timerInterval) clearInterval(timerInterval);
 
         if (!empId) {
             btn.textContent = '⏸️ Pause Starten';
             btn.classList.remove('active');
-            timerContainer.style.display = 'none';
+            let pauseContainer = document.getElementById('pauseTimerContainer');
+            if (pauseContainer) pauseContainer.style.display = 'none';
             currentActivePause = null;
             return;
         }
@@ -464,30 +653,30 @@
             currentActivePause = activeData;
             btn.textContent = '▶️ Pause Beenden';
             btn.classList.add('active');
-            timerContainer.style.display = 'block';
+            
+            let pauseContainer = document.getElementById('pauseTimerContainer');
+            if (pauseContainer) pauseContainer.style.display = 'block';
 
             const startTimestamp = new Date(activeData.startTime).getTime();
-
             timerInterval = setInterval(() => {
                 const now = new Date().getTime();
                 const diffMs = now - startTimestamp;
-
                 const hours = String(Math.floor(diffMs / 3600000)).padStart(2, '0');
                 const minutes = String(Math.floor((diffMs % 3600000) / 60000)).padStart(2, '0');
                 const seconds = String(Math.floor((diffMs % 60000) / 1000)).padStart(2, '0');
-
                 document.getElementById('timerDisplay').textContent = `${hours}:${minutes}:${seconds}`;
             }, 1000);
         } else {
             currentActivePause = null;
             btn.textContent = '⏸️ Pause Starten';
             btn.classList.remove('active');
-            timerContainer.style.display = 'none';
+            let pauseContainer = document.getElementById('pauseTimerContainer');
+            if (pauseContainer) pauseContainer.style.display = 'none';
         }
     }
 
     async function togglePauseTracker() {
-        const empId = trackerEmpSelect.value;
+        const empId = centralEmpSelect.value;
         if (!empId) {
             alert('Bitte wähle zuerst einen Mitarbeiter aus!');
             return;
@@ -496,9 +685,15 @@
         const now = new Date();
 
         if (!currentActivePause) {
+            if (!currentActiveWork) {
+                alert('Fehler: Eine Pause kann nur gestartet werden, wenn sich der Mitarbeiter im Dienst befindet (Arbeitsbeginn aktiv)!');
+                return;
+            }
+
             const activePayload = {
                 startTime: now.toISOString(),
-                startStr: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0')
+                startStr: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
+                entryKey: currentActiveWork.entryKey || `${empId}_${currentActiveWork.dateStr || getTodayLocalDate()}`
             };
 
             await apiRequest(`active_pauses/${empId}`, 'put', activePayload);
@@ -506,29 +701,33 @@
         } else {
             const startStr = currentActivePause.startStr;
             const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-            const dateStr = getTodayLocalDate();
+            const dateStr = (currentActiveWork && currentActiveWork.dateStr) || getTodayLocalDate();
+            const entryKey = currentActivePause.entryKey || (currentActiveWork && currentActiveWork.entryKey) || `${empId}_${dateStr}`;
 
-            const existingData = await fetchDayData(empId, dateStr);
+            const existingData = await apiRequest(`time_entries/${entryKey}`, 'get');
             if (existingData && existingData.pauses) {
-                let newStartMin = timeToMinutes(startStr);
-                let newEndMin = timeToMinutes(endStr);
+                let shiftStart = existingData.start_time || (currentActiveWork ? currentActiveWork.startStr : startStr);
+                let newStartMin = getShiftMinutes(startStr, shiftStart);
+                let newEndMin = getShiftMinutes(endStr, shiftStart);
                 for (let p of existingData.pauses) {
-                    if (checkOverlap(newStartMin, newEndMin, timeToMinutes(p.start), timeToMinutes(p.end))) {
+                    if (checkOverlap(newStartMin, newEndMin, getShiftMinutes(p.start, shiftStart), getShiftMinutes(p.end, shiftStart))) {
                         alert(`Fehler: Diese Pause überschneidet sich mit einer bereits eingetragenen Pause (${p.start} - ${p.end} Uhr)!`);
                         return;
                     }
                 }
             }
 
-            await savePauseToDatabase(empId, dateStr, startStr, endStr);
+            await savePauseToDatabase(empId, dateStr, entryKey, startStr, endStr);
             await apiRequest(`active_pauses/${empId}`, 'delete');
             checkActivePauseStatus();
         }
     }
 
-    async function savePauseToDatabase(empId, date, startStr, endStr) {
-        const entryKey = `${empId}_${date}`;
-        const existingData = await fetchDayData(empId, date) || { pauses: [] };
+    async function savePauseToDatabase(empId, date, entryKey, startStr, endStr) {
+        let activeWorkData = currentActiveWork || await apiRequest(`active_work/${empId}`, 'get');
+        let defaultStart = activeWorkData ? activeWorkData.startStr : '';
+
+        const existingData = await apiRequest(`time_entries/${entryKey}`, 'get') || { start_time: defaultStart, end_time: '', pauses: [] };
         let pauses = existingData.pauses || [];
         
         pauses.push({ start: startStr, end: endStr });
@@ -537,7 +736,7 @@
             id: entryKey,
             employee_id: empId,
             date: date,
-            start_time: existingData.start_time || '',
+            start_time: existingData.start_time || defaultStart,
             end_time: existingData.end_time || '',
             pauses: pauses
         };
@@ -548,47 +747,81 @@
         if (empSelect.value === empId) checkDayStatus();
     }
 
+    // --- MANUELLE ERFASSUNG MIT PFLICHTFELD-PRÜFUNG ---
     document.getElementById('timeForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const empId = empSelect.value;
         const date = dateInput.value;
-        const entryKey = `${empId}_${date}`;
 
         const newStart = document.getElementById('start').value;
         const newEnd = document.getElementById('end').value;
         const newPauseStart = document.getElementById('pauseStart').value;
         const newPauseEnd = document.getElementById('pauseEnd').value;
 
+        // Prüfen, ob überhaupt mindestens eine Uhrzeit eingetragen wurde
+        if (!newStart && !newEnd && !newPauseStart && !newPauseEnd) {
+            alert('Fehler: Du musst mindestens eine Uhrzeit (Arbeitsbeginn, Arbeitsende oder eine Pause) eintragen!');
+            return;
+        }
+
+        let startMin = timeToMinutes(newStart);
+        let adjEndMin = getShiftMinutes(newEnd, newStart);
+
         if (newStart && newEnd) {
-            if (timeToMinutes(newEnd) <= timeToMinutes(newStart)) {
+            if (adjEndMin <= startMin) {
                 alert('Fehler: Das Arbeitsende muss nach dem Arbeitsbeginn liegen!');
                 return;
             }
         }
 
-        const existingData = await fetchDayData(empId, date) || { pauses: [] };
-        let pauses = [...(existingData.pauses || [])];
+        const dayEntries = await fetchDayEntries(empId, date);
+        let targetEntry = null;
+        let targetKey = null;
+
+        if (newStart) {
+            targetEntry = dayEntries.find(e => e.start_time === newStart);
+            if (!targetEntry) {
+                targetEntry = dayEntries.find(e => !e.start_time && !e.end_time);
+            }
+            if (!targetEntry) {
+                targetKey = `${empId}_${date}_${Date.now()}`;
+                targetEntry = { id: targetKey, employee_id: empId, date: date, start_time: '', end_time: '', pauses: [] };
+            } else {
+                targetKey = targetEntry.id;
+            }
+        } else {
+            if (dayEntries.length > 0) {
+                targetEntry = dayEntries[dayEntries.length - 1];
+                targetKey = targetEntry.id;
+            } else {
+                targetKey = `${empId}_${date}_${Date.now()}`;
+                targetEntry = { id: targetKey, employee_id: empId, date: date, start_time: '', end_time: '', pauses: [] };
+            }
+        }
+
+        let pauses = [...(targetEntry.pauses || [])];
+        let effectiveStart = newStart || targetEntry.start_time || '';
 
         if (newPauseStart && newPauseEnd) {
-            let pStartMin = timeToMinutes(newPauseStart);
-            let pEndMin = timeToMinutes(newPauseEnd);
+            let pStartMin = getShiftMinutes(newPauseStart, effectiveStart);
+            let pEndMin = getShiftMinutes(newPauseEnd, effectiveStart);
 
             if (pEndMin <= pStartMin) {
                 alert('Fehler: Das Pausen-Ende muss nach dem Pausen-Beginn liegen!');
                 return;
             }
 
-            if (newStart && pStartMin < timeToMinutes(newStart)) {
-                alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
+            if (effectiveStart && pStartMin < timeToMinutes(effectiveStart)) {
+                alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${effectiveStart} Uhr) beginnen!`);
                 return;
             }
-            if (newEnd && pEndMin > timeToMinutes(newEnd)) {
+            if (newEnd && pEndMin > adjEndMin) {
                 alert(`Fehler: Eine Pause (${newPauseEnd} Uhr) kann nicht nach dem Arbeitsende (${newEnd} Uhr) enden!`);
                 return;
             }
 
             for (let p of pauses) {
-                if (checkOverlap(pStartMin, pEndMin, timeToMinutes(p.start), timeToMinutes(p.end))) {
+                if (checkOverlap(pStartMin, pEndMin, getShiftMinutes(p.start, effectiveStart), getShiftMinutes(p.end, effectiveStart))) {
                     alert(`Fehler: Die neue Pause überschneidet sich mit einer bereits vorhandenen Pause (${p.start} - ${p.end} Uhr)!`);
                     return;
                 }
@@ -597,26 +830,27 @@
             pauses.push({ start: newPauseStart, end: newPauseEnd });
         }
 
-        let finalStart = newStart || existingData.start_time || '';
-        let finalEnd = newEnd || existingData.end_time || '';
+        let finalStart = newStart || targetEntry.start_time || '';
+        let finalEnd = newEnd || targetEntry.end_time || '';
+        let finalAdjEnd = getShiftMinutes(finalEnd, finalStart);
 
         if (pauses.length > 0) {
-            pauses.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
-            let firstPauseStart = timeToMinutes(pauses[0].start);
-            let lastPauseEnd = timeToMinutes(pauses[pauses.length - 1].end);
+            pauses.sort((a, b) => getShiftMinutes(a.start, finalStart) - getShiftMinutes(b.start, finalStart));
+            let firstPauseStart = getShiftMinutes(pauses[0].start, finalStart);
+            let lastPauseEnd = getShiftMinutes(pauses[pauses.length - 1].end, finalStart);
 
             if (finalStart && timeToMinutes(finalStart) > firstPauseStart) {
                 alert(`Fehler: Der Arbeitsbeginn (${finalStart} Uhr) kann nicht nach der ersten Pause (${pauses[0].start} Uhr) liegen!`);
                 return;
             }
-            if (finalEnd && timeToMinutes(finalEnd) < lastPauseEnd) {
+            if (finalEnd && finalAdjEnd < lastPauseEnd) {
                 alert(`Fehler: Das Arbeitsende (${finalEnd} Uhr) kann nicht vor dem Ende der letzten Pause (${pauses[pauses.length - 1].end} Uhr) liegen!`);
                 return;
             }
         }
 
         const payload = {
-            id: entryKey,
+            id: targetKey,
             employee_id: empId,
             date: date,
             start_time: finalStart,
@@ -624,7 +858,7 @@
             pauses: pauses
         };
 
-        await apiRequest(`time_entries/${entryKey}`, 'put', payload);
+        await apiRequest(`time_entries/${targetKey}`, 'put', payload);
 
         alert('Erfolgreich gespeichert!');
         document.getElementById('start').value = '';
