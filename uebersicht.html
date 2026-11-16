@@ -343,7 +343,7 @@
         
         <form id="loginForm" onsubmit="handleLogin(event)">
             <input type="password" id="pinInput" placeholder="PIN eingeben..." maxlength="6" autofocus required style="text-align: center; font-size: 18px; letter-spacing: 4px;">
-            <button type="submit" style="margin-top: 15px; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Einloggen</button>
+            <button type="submit" id="btnLoginSubmit" style="margin-top: 15px; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">Einloggen</button>
         </form>
         <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 10px; display: none;">Falsche PIN!</div>
     </div>
@@ -443,12 +443,6 @@
 <script>
     const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
-    const PINS = {
-        '1312': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
-        '1904': { department: 'Service', roleName: 'Service-Leitung' },
-        '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
-    };
-
     let employees = {};
     let currentEntries = [];
     let activePauses = {};
@@ -466,21 +460,48 @@
         }
     }
 
-    function handleLogin(e) {
+    async function handleLogin(e) {
         e.preventDefault();
         const pin = document.getElementById('pinInput').value.trim();
         const errorDiv = document.getElementById('loginError');
+        const btnSubmit = document.getElementById('btnLoginSubmit');
 
-        if (PINS[pin]) {
-            const authData = { ...PINS[pin], pin: pin };
-            sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
-            document.getElementById('loginModal').style.display = 'none';
-            document.getElementById('pinInput').value = '';
-            errorDiv.style.display = 'none';
-            setupUI(authData);
-            loadData();
-        } else {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = 'Prüfe...';
+
+        try {
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: pin,
+                    path: 'auth',
+                    action: 'login'
+                })
+            });
+
+            if (res.ok) {
+                const authResult = await res.json();
+                const authData = {
+                    department: authResult.department,
+                    roleName: authResult.roleName,
+                    pin: pin
+                };
+                sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
+                document.getElementById('loginModal').style.display = 'none';
+                document.getElementById('pinInput').value = '';
+                errorDiv.style.display = 'none';
+                setupUI(authData);
+                loadData();
+            } else {
+                errorDiv.style.display = 'block';
+            }
+        } catch (err) {
+            console.error('Login-Fehler:', err);
             errorDiv.style.display = 'block';
+        } finally {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Einloggen';
         }
     }
 
@@ -517,7 +538,7 @@
     function getShiftMinutes(timeStr, startStr) {
         let m = timeToMinutes(timeStr);
         let s = timeToMinutes(startStr);
-        if (m > 0 && s > 0 && m < s) {
+        if (m >= 0 && m <= 180 && m < s) {
             m += 1440;
         }
         return m;
@@ -547,6 +568,10 @@
                     data: data
                 })
             });
+            if (res.status === 401) {
+                logout();
+                return null;
+            }
             if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
             return await res.json();
         } catch (e) {
@@ -728,7 +753,6 @@
                 `;
             }
 
-            // Klickbarer, pulsierender Live-Badge für "Im Dienst"
             let endTimeHTML = entry.end_time || '-';
             if (!entry.end_time && currentActiveWork) {
                 endTimeHTML = `

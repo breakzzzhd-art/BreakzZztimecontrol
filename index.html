@@ -240,7 +240,7 @@
         
         <form id="loginForm" onsubmit="handleLogin(event)">
             <input type="password" id="pinInput" placeholder="PIN eingeben..." maxlength="6" autofocus required style="text-align: center; font-size: 18px; letter-spacing: 4px;">
-            <button type="submit" style="margin-top: 15px;">Einloggen</button>
+            <button type="submit" id="btnLoginSubmit" style="margin-top: 15px;">Einloggen</button>
         </form>
         <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 10px; display: none;">Falsche PIN!</div>
     </div>
@@ -331,12 +331,6 @@
 <script>
     const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
 
-    const PINS = {
-        '1312': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
-        '1904': { department: 'Service', roleName: 'Service-Leitung' },
-        '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
-    };
-
     const centralEmpSelect = document.getElementById('centralEmpSelect');
     const empSelect = document.getElementById('employeeSelect');
     const dateInput = document.getElementById('date');
@@ -353,21 +347,48 @@
         }
     }
 
-    function handleLogin(e) {
+    async function handleLogin(e) {
         e.preventDefault();
         const pin = document.getElementById('pinInput').value.trim();
         const errorDiv = document.getElementById('loginError');
+        const btnSubmit = document.getElementById('btnLoginSubmit');
 
-        if (PINS[pin]) {
-            const authData = { ...PINS[pin], pin: pin };
-            sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
-            document.getElementById('loginModal').style.display = 'none';
-            document.getElementById('pinInput').value = '';
-            errorDiv.style.display = 'none';
-            setupUI(authData);
-            loadEmployees();
-        } else {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = 'Prüfe...';
+
+        try {
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: pin,
+                    path: 'auth',
+                    action: 'login'
+                })
+            });
+
+            if (res.ok) {
+                const authResult = await res.json();
+                const authData = {
+                    department: authResult.department,
+                    roleName: authResult.roleName,
+                    pin: pin
+                };
+                sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
+                document.getElementById('loginModal').style.display = 'none';
+                document.getElementById('pinInput').value = '';
+                errorDiv.style.display = 'none';
+                setupUI(authData);
+                loadEmployees();
+            } else {
+                errorDiv.style.display = 'block';
+            }
+        } catch (err) {
+            console.error('Login-Fehler:', err);
             errorDiv.style.display = 'block';
+        } finally {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Einloggen';
         }
     }
 
@@ -415,6 +436,10 @@
                     data: data
                 })
             });
+            if (res.status === 401) {
+                logout();
+                return null;
+            }
             if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
             return await res.json();
         } catch (e) {
@@ -460,7 +485,6 @@
         return h * 60 + m;
     }
 
-    // Nachtschicht-Erkennung: Nur bis maximal 03:00 Uhr nachts (<= 180 Min) als Folgetag werten
     function getShiftMinutes(timeStr, startStr) {
         let m = timeToMinutes(timeStr);
         let s = timeToMinutes(startStr);
@@ -747,7 +771,7 @@
         if (empSelect.value === empId) checkDayStatus();
     }
 
-    // --- MANUELLE ERFASSUNG MIT PFLICHTFELD-PRÜFUNG ---
+    // --- MANUELLE ERFASSUNG ---
     document.getElementById('timeForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const empId = empSelect.value;
@@ -758,7 +782,6 @@
         const newPauseStart = document.getElementById('pauseStart').value;
         const newPauseEnd = document.getElementById('pauseEnd').value;
 
-        // Prüfen, ob überhaupt mindestens eine Uhrzeit eingetragen wurde
         if (!newStart && !newEnd && !newPauseStart && !newPauseEnd) {
             alert('Fehler: Du musst mindestens eine Uhrzeit (Arbeitsbeginn, Arbeitsende oder eine Pause) eintragen!');
             return;

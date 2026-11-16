@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mitarbeiter verwalten</title>
+    <title>Mitarbeiterverwaltung</title>
     <style>
         :root {
             --card-bg: rgba(30, 41, 59, 0.55);
@@ -11,6 +11,7 @@
             --text: #f8fafc;
             --text-muted: #94a3b8;
             --primary: #3b82f6;
+            --primary-hover: #2563eb;
             --success: #10b981;
             --danger: #ef4444;
             --warning: #f59e0b;
@@ -21,14 +22,14 @@
             background: linear-gradient(rgba(15, 23, 42, 0.7), rgba(15, 23, 42, 0.7)), url('background.jpg') no-repeat center center fixed;
             background-size: cover;
             color: var(--text);
+            margin: 0;
             padding: 20px;
             display: flex;
             justify-content: center;
             min-height: 100vh;
-            margin: 0;
         }
 
-        .container { width: 100%; max-width: 500px; }
+        .container { width: 100%; max-width: 650px; }
 
         .logo-container {
             text-align: center;
@@ -60,9 +61,10 @@
             color: var(--text-muted);
             border-radius: 8px;
             font-weight: 600;
+            transition: 0.2s;
         }
 
-        .nav a.active { background: var(--primary); color: white; }
+        .nav a.active, .nav a:hover { background: var(--primary); color: white; }
 
         .card {
             background: var(--card-bg);
@@ -71,6 +73,7 @@
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 24px;
+            margin-bottom: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.4);
         }
 
@@ -96,54 +99,75 @@
         .badge-service { background: rgba(59, 130, 246, 0.25); color: var(--primary); border: 1px solid var(--primary); }
         .badge-admin { background: rgba(16, 185, 129, 0.25); color: var(--success); border: 1px solid var(--success); }
 
+        label {
+            display: block;
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
         input, select, button {
             width: 100%;
             padding: 12px;
-            margin-top: 8px;
+            margin-top: 6px;
             border-radius: 8px;
             border: 1px solid var(--border);
             background: rgba(15, 23, 42, 0.6);
             color: var(--text);
             box-sizing: border-box;
-            font-size: 14px;
+            font-size: 15px;
         }
 
-        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #2563eb; }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 14px;
+            transition: 0.2s;
+        }
 
-        ul { list-style: none; padding: 0; margin-top: 20px; }
+        button:hover { background: var(--primary-hover); }
 
-        li {
-            background: rgba(255,255,255,0.05);
-            padding: 12px;
-            margin-bottom: 8px;
-            border-radius: 8px;
+        .emp-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 10px;
+        }
+
+        .emp-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.45);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 10px;
         }
 
-        .emp-meta {
+        .emp-info {
             display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .emp-dept-label {
-            font-size: 11px;
-            color: var(--text-muted);
+            align-items: center;
+            gap: 10px;
         }
 
         .btn-del {
-            background: var(--danger);
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid var(--danger);
             width: auto;
             padding: 6px 12px;
             margin: 0;
             font-size: 13px;
         }
-        .btn-del:hover { background: #dc2626; }
 
-        /* Login Modal Overlay */
+        .btn-del:hover {
+            background: var(--danger);
+            color: white;
+        }
+
         .modal {
             display: flex;
             position: fixed;
@@ -172,12 +196,12 @@
 <!-- PIN LOGIN MODAL -->
 <div id="loginModal" class="modal">
     <div class="modal-content">
-        🔐 PIN-Eingabe erforderlich
+        <h3 style="margin-top: 0; color: #f8fafc;">🔐 PIN-Eingabe erforderlich</h3>
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Bitte gib deine PIN ein, um fortzufahren:</p>
         
         <form id="loginForm" onsubmit="handleLogin(event)">
             <input type="password" id="pinInput" placeholder="PIN eingeben..." maxlength="6" autofocus required style="text-align: center; font-size: 18px; letter-spacing: 4px;">
-            <button type="submit" style="margin-top: 15px;">Einloggen</button>
+            <button type="submit" id="btnLoginSubmit" style="margin-top: 15px;">Einloggen</button>
         </form>
         <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 10px; display: none;">Falsche PIN!</div>
     </div>
@@ -197,38 +221,34 @@
     <div class="card">
         <div class="user-info-bar">
             <span id="userStatusText">Angemeldet</span>
-            <button onclick="logout()" style="width: auto; padding: 4px 10px; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--danger);">Abmelden</button>
+            <button onclick="logout()" style="width: auto; padding: 4px 10px; margin: 0; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--danger);">Abmelden</button>
         </div>
 
-        <h2>👥 Mitarbeiter verwalten</h2>
-        
-        <form id="addForm">
-            <input type="text" id="empName" placeholder="Name des Mitarbeiters..." required>
-            
-            <!-- Nur für Admin (1337) sichtbar: Abteilungsauswahl -->
-            <div id="adminDeptWrapper" style="display: none; margin-top: 8px;">
-                <label style="font-size: 12px; color: var(--text-muted);">Abteilung zuweisen:</label>
-                <select id="empDeptSelect">
-                    <option value="Küche">Küche</option>
-                    <option value="Service">Service</option>
-                </select>
-            </div>
+        <h2>👥 Neuen Mitarbeiter anlegen</h2>
+        <form id="addEmployeeForm">
+            <label for="empName">Name des Mitarbeiters:</label>
+            <input type="text" id="empName" placeholder="Vor- und Nachname..." required>
 
-            <button type="submit" style="margin-top: 12px;">Hinzufügen</button>
+            <label for="empDept">Bereich / Abteilung:</label>
+            <select id="empDept" required>
+                <option value="Küche">Küche</option>
+                <option value="Service">Service</option>
+            </select>
+
+            <button type="submit">Mitarbeiter hinzufügen</button>
         </form>
+    </div>
 
-        <ul id="empList"></ul>
+    <div class="card">
+        <h3>📋 Aktuelle Mitarbeiterliste</h3>
+        <ul id="employeeList" class="emp-list">
+            <li>Lade Mitarbeiter...</li>
+        </ul>
     </div>
 </div>
 
 <script>
     const WORKER_URL = 'https://throbbing-sea-5e5b.breakzzzhd.workers.dev/';
-
-    const PINS = {
-        '1312': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
-        '1904': { department: 'Service', roleName: 'Service-Leitung' },
-        '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
-    };
 
     function checkAuth() {
         const session = sessionStorage.getItem('breakzzz_auth');
@@ -242,21 +262,48 @@
         }
     }
 
-    function handleLogin(e) {
+    async function handleLogin(e) {
         e.preventDefault();
         const pin = document.getElementById('pinInput').value.trim();
         const errorDiv = document.getElementById('loginError');
+        const btnSubmit = document.getElementById('btnLoginSubmit');
 
-        if (PINS[pin]) {
-            const authData = { ...PINS[pin], pin: pin };
-            sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
-            document.getElementById('loginModal').style.display = 'none';
-            document.getElementById('pinInput').value = '';
-            errorDiv.style.display = 'none';
-            setupUI(authData);
-            loadEmployees();
-        } else {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = 'Prüfe...';
+
+        try {
+            const res = await fetch(WORKER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pin: pin,
+                    path: 'auth',
+                    action: 'login'
+                })
+            });
+
+            if (res.ok) {
+                const authResult = await res.json();
+                const authData = {
+                    department: authResult.department,
+                    roleName: authResult.roleName,
+                    pin: pin
+                };
+                sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
+                document.getElementById('loginModal').style.display = 'none';
+                document.getElementById('pinInput').value = '';
+                errorDiv.style.display = 'none';
+                setupUI(authData);
+                loadEmployees();
+            } else {
+                errorDiv.style.display = 'block';
+            }
+        } catch (err) {
+            console.error('Login-Fehler:', err);
             errorDiv.style.display = 'block';
+        } finally {
+            btnSubmit.disabled = false;
+            btnSubmit.textContent = 'Einloggen';
         }
     }
 
@@ -267,21 +314,21 @@
 
     function setupUI(authData) {
         const statusText = document.getElementById('userStatusText');
-        const adminWrapper = document.getElementById('adminDeptWrapper');
+        const deptSelect = document.getElementById('empDept');
 
         if (authData.department === 'ALL') {
             statusText.innerHTML = `Eingeloggt als: <span class="badge badge-admin">${authData.roleName}</span>`;
-            adminWrapper.style.display = 'block';
         } else if (authData.department === 'Küche') {
             statusText.innerHTML = `Eingeloggt als: <span class="badge badge-kuche">${authData.roleName}</span>`;
-            adminWrapper.style.display = 'none';
+            deptSelect.value = 'Küche';
+            deptSelect.disabled = true;
         } else if (authData.department === 'Service') {
             statusText.innerHTML = `Eingeloggt als: <span class="badge badge-service">${authData.roleName}</span>`;
-            adminWrapper.style.display = 'none';
+            deptSelect.value = 'Service';
+            deptSelect.disabled = true;
         }
     }
 
-    // Sichere API-Funktion im selben Stil wie bei der Übersicht
     async function apiRequest(path, action, data = null) {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
@@ -295,6 +342,10 @@
                     data: data
                 })
             });
+            if (res.status === 401) {
+                logout();
+                return null;
+            }
             if (!res.ok) throw new Error('Netzwerk- oder Berechtigungsfehler');
             return await res.json();
         } catch (e) {
@@ -305,55 +356,67 @@
 
     async function loadEmployees() {
         const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
-        const list = document.getElementById('empList');
-        
+        const list = document.getElementById('employeeList');
         const data = await apiRequest('employees', 'get');
-        
+
         list.innerHTML = '';
-        if (data) {
-            Object.keys(data).forEach(id => {
-                const emp = data[id];
-                const empDept = emp.department || 'Küche';
 
-                if (session.department !== 'ALL' && session.department !== empDept) {
-                    return;
-                }
+        if (!data || Object.keys(data).length === 0) {
+            list.innerHTML = '<li style="color: var(--text-muted);">Keine Mitarbeiter vorhanden.</li>';
+            return;
+        }
 
-                let badgeClass = empDept === 'Service' ? 'badge-service' : 'badge-kuche';
+        let count = 0;
+        Object.keys(data).forEach(id => {
+            const emp = data[id];
+            const empDept = emp.department || 'Küche';
 
-                let li = document.createElement('li');
-                li.innerHTML = `
-                    <div class="emp-meta">
-                        <span><strong>${emp.name}</strong></span>
-                        <span class="emp-dept-label">Abteilung: <span class="badge ${badgeClass}">${empDept}</span></span>
-                    </div>
-                    <button class="btn-del" onclick="deleteEmp('${id}')">Löschen</button>
-                `;
-                list.appendChild(li);
-            });
+            if (session.department !== 'ALL' && session.department !== empDept) {
+                return;
+            }
+
+            count++;
+            const badgeClass = empDept === 'Küche' ? 'badge-kuche' : 'badge-service';
+            const li = document.createElement('li');
+            li.className = 'emp-item';
+            li.innerHTML = `
+                <div class="emp-info">
+                    <strong>${emp.name}</strong>
+                    <span class="badge ${badgeClass}">${empDept}</span>
+                </div>
+                <button class="btn-del" onclick="deleteEmployee('${id}', '${emp.name}')">Löschen</button>
+            `;
+            list.appendChild(li);
+        });
+
+        if (count === 0) {
+            list.innerHTML = '<li style="color: var(--text-muted);">Keine Mitarbeiter in deinem Bereich gefunden.</li>';
         }
     }
 
-    document.getElementById('addForm').addEventListener('submit', async (e) => {
+    document.getElementById('addEmployeeForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
-        const name = document.getElementById('empName').value.trim();
+        const nameInput = document.getElementById('empName');
+        const deptSelect = document.getElementById('empDept');
+
+        const name = nameInput.value.trim();
+        const department = deptSelect.value;
+
         if (!name) return;
 
-        let assignedDept = session.department;
-        if (session.department === 'ALL') {
-            assignedDept = document.getElementById('empDeptSelect').value;
-        }
+        const id = 'emp_' + Date.now();
+        await apiRequest(`employees/${id}`, 'put', {
+            id: id,
+            name: name,
+            department: department
+        });
 
-        // POST fügt einen neuen Eintrag in die Firebase-Liste hinzu
-        await apiRequest('employees', 'post', { name: name, department: assignedDept });
-
-        document.getElementById('empName').value = '';
+        nameInput.value = '';
         loadEmployees();
     });
 
-    async function deleteEmp(id) {
-        if (confirm('Mitarbeiter wirklich löschen?')) {
+    async function deleteEmployee(id, name) {
+        if (confirm(`Mitarbeiter "${name}" wirklich löschen?`)) {
             await apiRequest(`employees/${id}`, 'delete');
             loadEmployees();
         }
