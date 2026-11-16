@@ -83,6 +83,28 @@
             box-shadow: 0 20px 40px rgba(0,0,0,0.4);
         }
 
+        .user-info-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px 14px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        .badge-kuche { background: rgba(245, 158, 11, 0.25); color: var(--warning); border: 1px solid var(--warning); }
+        .badge-service { background: rgba(59, 130, 246, 0.25); color: var(--primary); border: 1px solid var(--primary); }
+        .badge-admin { background: rgba(16, 185, 129, 0.25); color: var(--success); border: 1px solid var(--success); }
+
         h2, h3 { margin-top: 0; }
 
         label {
@@ -151,9 +173,46 @@
             justify-content: space-between;
             font-size: 14px;
         }
+
+        /* Login Modal Overlay */
+        .modal {
+            display: flex;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 380px;
+            border: 1px solid var(--border);
+            text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+        }
     </style>
 </head>
 <body>
+
+<!-- PIN LOGIN MODAL -->
+<div id="loginModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin-top: 0; color: #f8fafc;">🔐 PIN-Eingabe erforderlich</h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Bitte gib deine PIN ein, um fortzufahren:</p>
+        
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <input type="password" id="pinInput" placeholder="PIN eingeben..." maxlength="6" autofocus required style="text-align: center; font-size: 18px; letter-spacing: 4px;">
+            <button type="submit" style="margin-top: 15px;">Einloggen</button>
+        </form>
+        <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 10px; display: none;">Falsche PIN!</div>
+    </div>
+</div>
 
 <div class="container">
     <div class="logo-container">
@@ -168,6 +227,11 @@
 
     <!-- Live Pausen-Tracker -->
     <div class="card">
+        <div class="user-info-bar">
+            <span id="userStatusText">Angemeldet</span>
+            <button onclick="logout()" style="width: auto; padding: 4px 10px; margin: 0; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--danger);">Abmelden</button>
+        </div>
+
         <h3>🔴 Live Pausen-Stoppuhr</h3>
         <label for="trackerEmpSelect">Mitarbeiter auswählen:</label>
         <select id="trackerEmpSelect" onchange="checkActivePauseStatus()">
@@ -217,9 +281,63 @@
 <script>
     const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
 
+    // PIN Definitionen
+    const PINS = {
+        '1810': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
+        '1904': { department: 'Service', roleName: 'Service-Leitung' },
+        '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
+    };
+
     const empSelect = document.getElementById('employeeSelect');
     const trackerEmpSelect = document.getElementById('trackerEmpSelect');
     const dateInput = document.getElementById('date');
+
+    function checkAuth() {
+        const session = sessionStorage.getItem('breakzzz_auth');
+        if (session) {
+            const authData = JSON.parse(session);
+            document.getElementById('loginModal').style.display = 'none';
+            setupUI(authData);
+            loadEmployees();
+        } else {
+            document.getElementById('loginModal').style.display = 'flex';
+        }
+    }
+
+    function handleLogin(e) {
+        e.preventDefault();
+        const pin = document.getElementById('pinInput').value.trim();
+        const errorDiv = document.getElementById('loginError');
+
+        if (PINS[pin]) {
+            const authData = PINS[pin];
+            sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('pinInput').value = '';
+            errorDiv.style.display = 'none';
+            setupUI(authData);
+            loadEmployees();
+        } else {
+            errorDiv.style.display = 'block';
+        }
+    }
+
+    function logout() {
+        sessionStorage.removeItem('breakzzz_auth');
+        location.reload();
+    }
+
+    function setupUI(authData) {
+        const statusText = document.getElementById('userStatusText');
+
+        if (authData.department === 'ALL') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-admin">${authData.roleName}</span>`;
+        } else if (authData.department === 'Küche') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-kuche">${authData.roleName}</span>`;
+        } else if (authData.department === 'Service') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-service">${authData.roleName}</span>`;
+        }
+    }
 
     // Lokales Datum ermitteln (verhindert UTC-Mitternachtsfehler)
     function getTodayLocalDate() {
@@ -236,6 +354,7 @@
     let currentActivePause = null;
 
     async function loadEmployees() {
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         try {
             const res = await fetch(FIREBASE_URL + 'employees.json');
             const data = await res.json();
@@ -245,8 +364,16 @@
             
             if (data) {
                 Object.keys(data).forEach(id => {
-                    let opt1 = new Option(data[id].name, id);
-                    let opt2 = new Option(data[id].name, id);
+                    const emp = data[id];
+                    const empDept = emp.department || 'Küche'; // Fallback für alte Einträge
+
+                    // Filterung nach Abteilung
+                    if (session.department !== 'ALL' && session.department !== empDept) {
+                        return;
+                    }
+
+                    let opt1 = new Option(`${emp.name} (${empDept})`, id);
+                    let opt2 = new Option(`${emp.name} (${empDept})`, id);
                     empSelect.add(opt1);
                     trackerEmpSelect.add(opt2);
                 });
@@ -377,7 +504,6 @@
         } else {
             const startStr = currentActivePause.startStr;
             const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-            // Nutze lokales Datum für den Tag der Beendigung
             const dateStr = getTodayLocalDate();
 
             const existingData = await fetchDayData(empId, dateStr);
@@ -516,7 +642,8 @@
         checkDayStatus();
     });
 
-    loadEmployees();
+    // Beim Laden Autorisierung prüfen
+    checkAuth();
 </script>
 </body>
 </html>

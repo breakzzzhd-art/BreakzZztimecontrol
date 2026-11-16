@@ -11,7 +11,9 @@
             --text: #f8fafc;
             --text-muted: #94a3b8;
             --primary: #3b82f6;
+            --success: #10b981;
             --danger: #ef4444;
+            --warning: #f59e0b;
         }
 
         body {
@@ -72,7 +74,29 @@
             box-shadow: 0 20px 40px rgba(0,0,0,0.4);
         }
 
-        input, button {
+        .user-info-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px 14px;
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        .badge-kuche { background: rgba(245, 158, 11, 0.25); color: var(--warning); border: 1px solid var(--warning); }
+        .badge-service { background: rgba(59, 130, 246, 0.25); color: var(--primary); border: 1px solid var(--primary); }
+        .badge-admin { background: rgba(16, 185, 129, 0.25); color: var(--success); border: 1px solid var(--success); }
+
+        input, select, button {
             width: 100%;
             padding: 12px;
             margin-top: 8px;
@@ -81,9 +105,11 @@
             background: rgba(15, 23, 42, 0.6);
             color: var(--text);
             box-sizing: border-box;
+            font-size: 14px;
         }
 
-        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
+        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #2563eb; }
 
         ul { list-style: none; padding: 0; margin-top: 20px; }
 
@@ -97,6 +123,17 @@
             align-items: center;
         }
 
+        .emp-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .emp-dept-label {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
         .btn-del {
             background: var(--danger);
             width: auto;
@@ -104,9 +141,46 @@
             margin: 0;
             font-size: 13px;
         }
+        .btn-del:hover { background: #dc2626; }
+
+        /* Login Modal Overlay */
+        .modal {
+            display: flex;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(8px);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 380px;
+            border: 1px solid var(--border);
+            text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.6);
+        }
     </style>
 </head>
 <body>
+
+<!-- PIN LOGIN MODAL -->
+<div id="loginModal" class="modal">
+    🔐 PIN-Eingabe erforderlich
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Bitte gib deine PIN ein, um fortzufahren:</p>
+        
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <input type="password" id="pinInput" placeholder="PIN eingeben..." maxlength="6" autofocus required style="text-align: center; font-size: 18px; letter-spacing: 4px;">
+            <button type="submit" style="margin-top: 15px;">Einloggen</button>
+        </form>
+        <div id="loginError" style="color: var(--danger); font-size: 13px; margin-top: 10px; display: none;">Falsche PIN!</div>
+    </div>
+</div>
 
 <div class="container">
     <div class="logo-container">
@@ -120,11 +194,26 @@
     </div>
 
     <div class="card">
+        <div class="user-info-bar">
+            <span id="userStatusText">Angemeldet</span>
+            <button onclick="logout()" style="width: auto; padding: 4px 10px; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid var(--danger);">Abmelden</button>
+        </div>
+
         <h2>👥 Mitarbeiter verwalten</h2>
         
         <form id="addForm">
             <input type="text" id="empName" placeholder="Name des Mitarbeiters..." required>
-            <button type="submit">Hinzufügen</button>
+            
+            <!-- Nur für Admin (1337) sichtbar: Abteilungsauswahl -->
+            <div id="adminDeptWrapper" style="display: none; margin-top: 8px;">
+                <label style="font-size: 12px; color: var(--text-muted);">Abteilung zuweisen:</label>
+                <select id="empDeptSelect">
+                    <option value="Küche">Küche</option>
+                    <option value="Service">Service</option>
+                </select>
+            </div>
+
+            <button type="submit" style="margin-top: 12px;">Hinzufügen</button>
         </form>
 
         <ul id="empList"></ul>
@@ -134,7 +223,66 @@
 <script>
     const FIREBASE_URL = 'https://zeiterfassung-chef-default-rtdb.europe-west1.firebasedatabase.app/';
 
+    // PIN Definitionen
+    const PINS = {
+        '1810': { department: 'Küche', roleName: 'Chefkoch (Küche)' },
+        '1904': { department: 'Service', roleName: 'Service-Leitung' },
+        '1337': { department: 'ALL', roleName: 'Admin (Alle Bereiche)' }
+    };
+
+    function checkAuth() {
+        const session = sessionStorage.getItem('breakzzz_auth');
+        if (session) {
+            const authData = JSON.parse(session);
+            document.getElementById('loginModal').style.display = 'none';
+            setupUI(authData);
+            loadEmployees();
+        } else {
+            document.getElementById('loginModal').style.display = 'flex';
+        }
+    }
+
+    function handleLogin(e) {
+        e.preventDefault();
+        const pin = document.getElementById('pinInput').value.trim();
+        const errorDiv = document.getElementById('loginError');
+
+        if (PINS[pin]) {
+            const authData = PINS[pin];
+            sessionStorage.setItem('breakzzz_auth', JSON.stringify(authData));
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('pinInput').value = '';
+            errorDiv.style.display = 'none';
+            setupUI(authData);
+            loadEmployees();
+        } else {
+            errorDiv.style.display = 'block';
+        }
+    }
+
+    function logout() {
+        sessionStorage.removeItem('breakzzz_auth');
+        location.reload();
+    }
+
+    function setupUI(authData) {
+        const statusText = document.getElementById('userStatusText');
+        const adminWrapper = document.getElementById('adminDeptWrapper');
+
+        if (authData.department === 'ALL') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-admin">${authData.roleName}</span>`;
+            adminWrapper.style.display = 'block';
+        } else if (authData.department === 'Küche') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-kuche">${authData.roleName}</span>`;
+            adminWrapper.style.display = 'none';
+        } else if (authData.department === 'Service') {
+            statusText.innerHTML = `Eingeloggt als: <span class="badge badge-service">${authData.roleName}</span>`;
+            adminWrapper.style.display = 'none';
+        }
+    }
+
     async function loadEmployees() {
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         const list = document.getElementById('empList');
         const res = await fetch(FIREBASE_URL + 'employees.json');
         const data = await res.json();
@@ -142,9 +290,22 @@
         list.innerHTML = '';
         if (data) {
             Object.keys(data).forEach(id => {
+                const emp = data[id];
+                const empDept = emp.department || 'Küche'; // Fallback für alte Einträge
+
+                // Filterung nach Berechtigung (Admin sieht alles, andere nur ihre Abteilung)
+                if (session.department !== 'ALL' && session.department !== empDept) {
+                    return;
+                }
+
+                let badgeClass = empDept === 'Service' ? 'badge-service' : 'badge-kuche';
+
                 let li = document.createElement('li');
                 li.innerHTML = `
-                    <span>${data[id].name}</span>
+                    <div class="emp-meta">
+                        <span><strong>${emp.name}</strong></span>
+                        <span class="emp-dept-label">Abteilung: <span class="badge ${badgeClass}">${empDept}</span></span>
+                    </div>
                     <button class="btn-del" onclick="deleteEmp('${id}')">Löschen</button>
                 `;
                 list.appendChild(li);
@@ -154,13 +315,24 @@
 
     document.getElementById('addForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const session = JSON.parse(sessionStorage.getItem('breakzzz_auth') || '{}');
         const name = document.getElementById('empName').value.trim();
         if (!name) return;
 
+        // Wenn Admin eingeloggt ist, nimm das Select-Feld. Ansonsten nimm die eigene Abteilung.
+        let assignedDept = session.department;
+        if (session.department === 'ALL') {
+            assignedDept = document.getElementById('empDeptSelect').value;
+        }
+
         await fetch(FIREBASE_URL + 'employees.json', {
             method: 'POST',
-            body: JSON.stringify({ name: name })
+            body: JSON.stringify({ 
+                name: name,
+                department: assignedDept 
+            })
         });
+
         document.getElementById('empName').value = '';
         loadEmployees();
     });
@@ -172,7 +344,8 @@
         }
     }
 
-    loadEmployees();
+    // Beim Laden prüfen ob Login aktiv ist
+    checkAuth();
 </script>
 </body>
 </html>
