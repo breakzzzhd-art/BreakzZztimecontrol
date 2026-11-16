@@ -547,6 +547,17 @@
     function onEmployeeSelected() {
         checkActiveWorkStatus();
         checkActivePauseStatus();
+        
+        // Pausen-Button direkt aktivieren, sobald Mitarbeiter gewählt ist (kein Arbeitsbeginn mehr zwingend nötig)
+        const empId = centralEmpSelect.value;
+        const btnPause = document.getElementById('btnTracker');
+        if (empId) {
+            btnPause.disabled = false;
+            btnPause.style.opacity = '1';
+        } else {
+            btnPause.disabled = true;
+            btnPause.style.opacity = '0.5';
+        }
     }
 
     // --- LIVE ARBEITSZEIT-TRACKER ---
@@ -554,7 +565,6 @@
         const empId = centralEmpSelect.value;
         const btnWork = document.getElementById('btnWorkTracker');
         const workContainer = document.getElementById('workTimerContainer');
-        const btnPause = document.getElementById('btnTracker');
 
         if (workTimerInterval) clearInterval(workTimerInterval);
 
@@ -563,8 +573,6 @@
             btnWork.classList.remove('active');
             workContainer.style.display = 'none';
             currentActiveWork = null;
-            btnPause.disabled = true;
-            btnPause.style.opacity = '0.5';
             return;
         }
 
@@ -575,9 +583,6 @@
             btnWork.textContent = '🔴 Arbeitsende erfassen';
             btnWork.classList.add('active');
             workContainer.style.display = 'block';
-
-            btnPause.disabled = false;
-            btnPause.style.opacity = '1';
 
             const startTimestamp = new Date(activeData.startTime).getTime();
             workTimerInterval = setInterval(() => {
@@ -593,9 +598,6 @@
             btnWork.textContent = '🟢 Arbeitsbeginn erfassen';
             btnWork.classList.remove('active');
             workContainer.style.display = 'none';
-
-            btnPause.disabled = true;
-            btnPause.style.opacity = '0.5';
         }
     }
 
@@ -623,12 +625,6 @@
             await apiRequest(`active_work/${empId}`, 'put', activePayload);
             checkActiveWorkStatus();
         } else {
-            const activePauseCheck = await apiRequest(`active_pauses/${empId}`, 'get');
-            if (activePauseCheck && activePauseCheck.startTime) {
-                alert('Fehler: Die Arbeitszeit kann nicht beendet werden, solange der Mitarbeiter noch in Pause ist! Bitte zuerst die Pause beenden.');
-                return;
-            }
-
             const startStr = currentActiveWork.startStr;
             const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
             const dateStr = currentActiveWork.dateStr || getTodayLocalDate();
@@ -709,28 +705,29 @@
         const now = new Date();
 
         if (!currentActivePause) {
-            if (!currentActiveWork) {
-                alert('Fehler: Eine Pause kann nur gestartet werden, wenn sich der Mitarbeiter im Dienst befindet (Arbeitsbeginn aktiv)!');
-                return;
-            }
+            // Keine aktive Pause -> Pause starten (auch ohne aktiven Arbeitsbeginn möglich!)
+            const dateStr = getTodayLocalDate();
+            const entryKey = (currentActiveWork && currentActiveWork.entryKey) ? currentActiveWork.entryKey : `${empId}_${dateStr}_${now.getTime()}`;
 
             const activePayload = {
                 startTime: now.toISOString(),
                 startStr: String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
-                entryKey: currentActiveWork.entryKey || `${empId}_${currentActiveWork.dateStr || getTodayLocalDate()}`
+                entryKey: entryKey,
+                dateStr: dateStr
             };
 
             await apiRequest(`active_pauses/${empId}`, 'put', activePayload);
             checkActivePauseStatus();
         } else {
+            // Aktive Pause beenden und speichern
             const startStr = currentActivePause.startStr;
             const endStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-            const dateStr = (currentActiveWork && currentActiveWork.dateStr) || getTodayLocalDate();
+            const dateStr = currentActivePause.dateStr || (currentActiveWork && currentActiveWork.dateStr) || getTodayLocalDate();
             const entryKey = currentActivePause.entryKey || (currentActiveWork && currentActiveWork.entryKey) || `${empId}_${dateStr}`;
 
             const existingData = await apiRequest(`time_entries/${entryKey}`, 'get');
             if (existingData && existingData.pauses) {
-                let shiftStart = existingData.start_time || (currentActiveWork ? currentActiveWork.startStr : startStr);
+                let shiftStart = existingData.start_time || '00:00';
                 let newStartMin = getShiftMinutes(startStr, shiftStart);
                 let newEndMin = getShiftMinutes(endStr, shiftStart);
                 for (let p of existingData.pauses) {
@@ -823,7 +820,7 @@
         }
 
         let pauses = [...(targetEntry.pauses || [])];
-        let effectiveStart = newStart || targetEntry.start_time || '';
+        let effectiveStart = newStart || targetEntry.start_time || '00:00';
 
         if (newPauseStart && newPauseEnd) {
             let pStartMin = getShiftMinutes(newPauseStart, effectiveStart);
@@ -834,8 +831,8 @@
                 return;
             }
 
-            if (effectiveStart && pStartMin < timeToMinutes(effectiveStart)) {
-                alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${effectiveStart} Uhr) beginnen!`);
+            if (newStart && pStartMin < timeToMinutes(newStart)) {
+                alert(`Fehler: Eine Pause (${newPauseStart} Uhr) kann nicht vor dem Arbeitsbeginn (${newStart} Uhr) beginnen!`);
                 return;
             }
             if (newEnd && pEndMin > adjEndMin) {
@@ -857,12 +854,12 @@
         let finalEnd = newEnd || targetEntry.end_time || '';
         let finalAdjEnd = getShiftMinutes(finalEnd, finalStart);
 
-        if (pauses.length > 0) {
+        if (pauses.length > 0 && finalStart) {
             pauses.sort((a, b) => getShiftMinutes(a.start, finalStart) - getShiftMinutes(b.start, finalStart));
             let firstPauseStart = getShiftMinutes(pauses[0].start, finalStart);
             let lastPauseEnd = getShiftMinutes(pauses[pauses.length - 1].end, finalStart);
 
-            if (finalStart && timeToMinutes(finalStart) > firstPauseStart) {
+            if (timeToMinutes(finalStart) > firstPauseStart) {
                 alert(`Fehler: Der Arbeitsbeginn (${finalStart} Uhr) kann nicht nach der ersten Pause (${pauses[0].start} Uhr) liegen!`);
                 return;
             }
